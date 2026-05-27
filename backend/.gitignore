@@ -1,0 +1,26 @@
+# Ignore venv
+.venv
+
+venv
+
+
+# Ignore database files
+*.db
+
+.env
+
+*.log
+**/*.log
+
+
+
+
+**/__pycache__/
+**/_pycache/
+
+
+
+
+
+cache/
+sessions_export*.jsonl

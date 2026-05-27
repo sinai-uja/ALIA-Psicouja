@@ -1,0 +1,495 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import Session, select
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
+from typing import List, Optional
+from pydantic import BaseModel
+import secrets
+from datetime import datetime, timezone
+from database import get_session
+from models import Patient, PatientReadWithAssignments, PatientRead, Psychologist, Message, Assignment, QuestionnaireCompletion
+from auth import get_current_user, require_admin, get_current_patient
+from logging_utils import log_action
+from utils.logger import logger
+
+router = APIRouter()
+
+class AssignRequest(BaseModel):
+    psychologist_id: int
+
+class RegenerateCodeResponse(BaseModel):
+    access_code: str
+
+class UpdateCodeRequest(BaseModel):
+    new_code: str
+    
+def generate_access_code():
+    return secrets.token_urlsafe(6).upper()
+
+def generate_patient_code():
+    return "P-" + secrets.token_hex(2).upper()
+
+class ClinicalLogUpdateRequest(BaseModel):
+    clinical_log: str
+
+@router.patch("/patients/{patient_id}/clinical-log")
+def update_clinical_log(
+    patient_id: int,
+    data: ClinicalLogUpdateRequest,
+    session: Session = Depends(get_session),
+    current_user: Psychologist = Depends(get_current_user)
+):
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    # Verify access
+    if current_user.role != "admin" and patient.psychologist_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    patient.clinical_log = data.clinical_log
+    session.add(patient)
+    session.commit()
+    return {"ok": True}
+
+@router.post("/patients")
+def create_patient(patient: Patient, session: Session = Depends(get_session), current_user: Psychologist = Depends(get_current_user)):
+    # If not admin and no psychologist_id provided, assign to current user
+    if current_user.role != "admin" and not patient.psychologist_id:
+        patient.psychologist_id = current_user.id
+
+    if not patient.access_code:
+        patient.access_code = generate_access_code()
+    
+    # If psychologist_id is provided, verify it exists
+    if patient.psychologist_id:
+        psych = session.get(Psychologist, patient.psychologist_id)
+        if psych:
+            patient.psychologist_name = psych.name
+            patient.psychologist_schedule = psych.schedule
+            patient.psychologist_photo = psych.photo_url
+    else:
+        # Fallback: assign to current user
+        patient.psychologist_id = current_user.id
+        patient.psychologist_name = current_user.name
+        patient.psychologist_schedule = current_user.schedule
+
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    
+    return {
+        "id": patient.id,
+        "patient_code": patient.patient_code,
+        "access_code": patient.access_code,
+        "psychologist_id": patient.psychologist_id,
+        "psychologist_name": patient.psychologist_name,
+        "psychologist_schedule": patient.psychologist_schedule,
+        "created_at": patient.created_at,
+        "clinical_summary": patient.clinical_summary,
+        "clinical_log": patient.clinical_log
+    }
+
+@router.get("/patients", response_model=List[PatientReadWithAssignments])
+def read_patients(
+    offset: int = 0, 
+    limit: int = Query(default=100, lte=100), 
+    psychologist_id: Optional[int] = None, 
+    session: Session = Depends(get_session), 
+    current_user: Psychologist = Depends(get_current_user)
+):
+    query = select(Patient).where(Patient.deleted_at == None).options(selectinload(Patient.assignments).selectinload(Assignment.questionnaire))
+    
+    if current_user.role != "admin":
+        query = query.where(Patient.psychologist_id == current_user.id)
+    elif psychologist_id:
+        query = query.where(Patient.psychologist_id == psychologist_id)
+    
+    patients = session.exec(query.offset(offset).limit(limit)).all()
+    
+    results = []
+    for p in patients:
+        unread_count = session.exec(
+            select(func.count(Message.id)).where(
+                Message.patient_id == p.id,
+                Message.is_from_patient == True,
+                Message.read == False,
+                Message.deleted_at == None
+            )
+        ).one()
+
+        unread_questionnaires = session.exec(
+            select(func.count(QuestionnaireCompletion.id)).where(
+                QuestionnaireCompletion.patient_id == p.id,
+                QuestionnaireCompletion.status == "completed",
+                QuestionnaireCompletion.read_by_therapist == False,
+                QuestionnaireCompletion.deleted_at == None
+            )
+        ).one()
+        
+        # EXCLUIMOS tanto assignments como is_online para que no choquen
+        p_data = p.model_dump(exclude={"assignments", "is_online"})
+        
+        p_read = PatientReadWithAssignments(
+            **p_data,
+            is_online=p.is_active_now, # Ahora este es el único valor para is_online
+            assignments=[a for a in p.assignments if a.deleted_at is None],
+            unread_messages=unread_count,
+            unread_questionnaires=unread_questionnaires
+        )
+        results.append(p_read)
+        
+    return results
+
+@router.delete("/patients/{patient_id}")
+def delete_patient(
+    patient_id: int, 
+    session: Session = Depends(get_session), 
+    current_user: Psychologist = Depends(get_current_user)
+):
+    from models import Assignment, QuestionnaireCompletion, Session as TherapySession, Note, Message, AssessmentStat
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+        
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    
+    now = datetime.now(timezone.utc)
+    
+    # 1. Cascade soft delete to all related entities
+    # Assignments and their completions
+    assignments = session.exec(select(Assignment).where(Assignment.patient_id == patient_id, Assignment.deleted_at == None)).all()
+    for a in assignments:
+        a.deleted_at = now
+        session.add(a)
+        # Completions
+        completions = session.exec(select(QuestionnaireCompletion).where(QuestionnaireCompletion.assignment_id == a.id, QuestionnaireCompletion.deleted_at == None)).all()
+        for c in completions:
+            c.deleted_at = now
+            session.add(c)
+            
+    # Sessions
+    sessions = session.exec(select(TherapySession).where(TherapySession.patient_id == patient_id, TherapySession.deleted_at == None)).all()
+    for s in sessions:
+        s.deleted_at = now
+        session.add(s)
+        
+    # Notes
+    notes = session.exec(select(Note).where(Note.patient_id == patient_id, Note.deleted_at == None)).all()
+    for n in notes:
+        n.deleted_at = now
+        session.add(n)
+        
+    # Messages
+    messages = session.exec(select(Message).where(Message.patient_id == patient_id, Message.deleted_at == None)).all()
+    for m in messages:
+        m.deleted_at = now
+        session.add(m)
+        
+    # Assessment Stats
+    stats = session.exec(select(AssessmentStat).where(AssessmentStat.patient_id == patient_id, AssessmentStat.deleted_at == None)).all()
+    for st in stats:
+        st.deleted_at = now
+        session.add(st)
+    
+    # Finally delete the patient
+    patient.deleted_at = now
+    session.add(patient)
+    session.commit()
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "DELETE_PATIENT_CASCADE", details={"patient_id": patient_id})
+    return {"ok": True}
+
+@router.patch("/patients/{patient_id}/assign")
+def assign_patient(patient_id: int, req: AssignRequest, session: Session = Depends(get_session), current_user: Psychologist = Depends(require_admin)):
+    patient = session.get(Patient, patient_id)
+    psychologist = session.get(Psychologist, req.psychologist_id)
+    
+    if not patient or not psychologist:
+        raise HTTPException(status_code=404, detail="Patient or Psychologist not found")
+        
+    patient.psychologist_id = psychologist.id
+    patient.psychologist_name = psychologist.name
+    patient.psychologist_schedule = psychologist.schedule
+    patient.psychologist_photo = psychologist.photo_url
+    
+    session.add(patient)
+    session.commit()
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "ASSIGN_PATIENT", details={"patient_id": patient.id, "assigned_to": psychologist.email})
+
+    return {"ok": True}
+
+@router.patch("/patients/{patient_id}/clinical-summary")
+def update_clinical_summary(
+    patient_id: int, 
+    summary_data: dict, 
+    session: Session = Depends(get_session), 
+    current_user: Psychologist = Depends(get_current_user)
+):
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    patient.clinical_summary = summary_data.get("clinical_summary", "")
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "UPDATE_CLINICAL_SUMMARY", details={"patient_id": patient_id})
+    
+    return {"ok": True, "clinical_summary": patient.clinical_summary}
+    
+@router.patch("/patients/{patient_id}/ai-instructions")
+def update_patient_ai_instructions(
+    patient_id: int, 
+    data: dict, 
+    session: Session = Depends(get_session), 
+    current_user: Psychologist = Depends(get_current_user)
+):
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    patient.ai_instructions = data.get("ai_instructions", "")
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "UPDATE_PATIENT_AI_INSTRUCTIONS", details={"patient_id": patient_id})
+    
+    return {"ok": True, "ai_instructions": patient.ai_instructions}
+
+@router.get("/patient/me", response_model=PatientRead)
+def get_current_patient_profile(
+    current_patient: Patient = Depends(get_current_patient)
+):
+    """Get the current authenticated patient's profile details."""
+    return current_patient
+
+@router.post("/patients/{patient_id}/regenerate-code", response_model=RegenerateCodeResponse)
+def regenerate_access_code_endpoint(
+    patient_id: int,
+    session: Session = Depends(get_session),
+    current_user: Psychologist = Depends(get_current_user)
+):
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+        
+    # Rotate code and version
+    patient.access_code = generate_access_code()
+    patient.token_version = (patient.token_version or 1) + 1
+    
+    # Reset online status to force UI update if they are theoretically online
+    patient.is_online = False
+    
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "REGENERATE_CODE", details={"patient_id": patient_id})
+    
+    return {"access_code": patient.access_code}
+
+@router.patch("/patients/{patient_id}/code")
+def update_patient_code(
+    patient_id: int, 
+    req: UpdateCodeRequest,
+    session: Session = Depends(get_session), 
+    current_user: Psychologist = Depends(get_current_user)
+):
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+        
+    patient.patient_code = req.new_code
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "UPDATE_PATIENT_CODE", details={"patient_id": patient_id, "new_code": req.new_code})
+    
+    return {"ok": True, "patient_code": patient.patient_code}
+
+
+# ============================================================================
+# IA PATIENT ENDPOINTS
+# ============================================================================
+
+class IaPromptRequest(BaseModel):
+    ia_patient_prompt: str
+
+@router.post("/patients/ensure-ia-patient")
+def ensure_ia_patient(
+    session: Session = Depends(get_session),
+    current_user: Psychologist = Depends(get_current_user)
+):
+    """Create or return the IA patient for the current psychologist."""
+    # Check if IA patient already exists for this psychologist
+    existing = session.exec(
+        select(Patient).where(
+            Patient.psychologist_id == current_user.id,
+            Patient.is_ia_patient == True,
+            Patient.deleted_at == None
+        )
+    ).first()
+    
+    if existing:
+        return {
+            "id": existing.id,
+            "patient_code": existing.patient_code,
+            "access_code": existing.access_code,
+            "psychologist_id": existing.psychologist_id,
+            "psychologist_name": existing.psychologist_name,
+            "is_ia_patient": True,
+            "ia_patient_prompt": existing.ia_patient_prompt,
+            "created_at": existing.created_at,
+            "clinical_log": existing.clinical_log,
+            "created": False
+        }
+    
+    # Create new IA patient
+    ia_patient = Patient(
+        patient_code=f"IA-{current_user.id}",
+        access_code=generate_access_code(),
+        psychologist_id=current_user.id,
+        psychologist_name=current_user.name,
+        psychologist_schedule=current_user.schedule,
+        psychologist_photo=current_user.photo_url,
+        is_ia_patient=True,
+        ia_patient_prompt=(
+            "Eres María, una paciente ficticia de 28 años que acude a terapia por problemas de ansiedad. "
+            "Tu trasfondo y vida cotidiana:\n"
+            "- Profesión: Diseñadora gráfica freelance. Trabajas desde casa, lo que aumenta tu aislamiento. "
+            "Tienes un cliente especialmente exigente y caótico (un proyecto de identidad de marca para una cadena de cafés) "
+            "que te envía correos a deshoras, lo que te dispara el síndrome del impostor y te hace procrastinar por miedo a no estar a la altura.\n"
+            "- Vida personal: Vives sola con tu gata 'Mimi'. Tienes pareja (Pablo), pero apenas le cuentas cómo te sientes realmente "
+            "porque temes ser una carga o que se canse de tus quejas.\n"
+            "- Síntomas principales: Dificultad extrema para conciliar el sueño (te quedas rumiando hasta las 3 o 4 de la mañana), "
+            "sensación de opresión en el pecho, respiración agitada y una constante preocupación catastrófica de que te vas a quedar sin clientes y acabarás en la ruina.\n"
+            "- Comportamiento en terapia: Eres reflexiva e inteligente, pero muestras resistencia inconsciente. "
+            "Te cuesta horrores llevar las pautas a la práctica. Si el terapeuta te propone una tarea, es muy probable que pongas excusas "
+            "reales (ej. 'se me olvidó', 'me dio pereza', 'sentí que no me iba a servir' o 'me dio ansiedad solo de pensarlo'). "
+            "Muestras ambivalencia: deseas mejorar pero te asusta el cambio o confrontar tus miedos."
+        )
+    )
+    
+    session.add(ia_patient)
+    session.commit()
+    session.refresh(ia_patient)
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "CREATE_IA_PATIENT", details={"patient_id": ia_patient.id})
+    
+    return {
+        "id": ia_patient.id,
+        "patient_code": ia_patient.patient_code,
+        "access_code": ia_patient.access_code,
+        "psychologist_id": ia_patient.psychologist_id,
+        "psychologist_name": ia_patient.psychologist_name,
+        "is_ia_patient": True,
+        "ia_patient_prompt": ia_patient.ia_patient_prompt,
+        "created_at": ia_patient.created_at,
+        "clinical_log": ia_patient.clinical_log,
+        "created": True
+    }
+
+
+@router.post("/patients/{patient_id}/reset-ia")
+def reset_ia_patient(
+    patient_id: int,
+    session: Session = Depends(get_session),
+    current_user: Psychologist = Depends(get_current_user)
+):
+    """Hard-delete all data associated with an IA patient (messages, sessions, notes, stats) while keeping the patient record."""
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if not patient.is_ia_patient:
+        raise HTTPException(status_code=400, detail="Only IA patients can be reset")
+    
+    from models import Assignment, QuestionnaireCompletion, Session as TherapySession, Note, Message, AssessmentStat, AISuggestionLog
+    
+    # Hard delete messages
+    messages = session.exec(select(Message).where(Message.patient_id == patient_id)).all()
+    for m in messages:
+        session.delete(m)
+    
+    # Hard delete AI suggestion logs
+    ai_logs = session.exec(select(AISuggestionLog).where(AISuggestionLog.patient_id == patient_id)).all()
+    for al in ai_logs:
+        session.delete(al)
+    
+    # Hard delete sessions
+    sessions_list = session.exec(select(TherapySession).where(TherapySession.patient_id == patient_id)).all()
+    for s in sessions_list:
+        session.delete(s)
+    
+    # Hard delete notes
+    notes = session.exec(select(Note).where(Note.patient_id == patient_id)).all()
+    for n in notes:
+        session.delete(n)
+    
+    # Hard delete assessment stats
+    stats = session.exec(select(AssessmentStat).where(AssessmentStat.patient_id == patient_id)).all()
+    for st in stats:
+        session.delete(st)
+    
+    # Hard delete assignments and completions
+    assignments = session.exec(select(Assignment).where(Assignment.patient_id == patient_id)).all()
+    for a in assignments:
+        completions = session.exec(select(QuestionnaireCompletion).where(QuestionnaireCompletion.assignment_id == a.id)).all()
+        for c in completions:
+            session.delete(c)
+        session.delete(a)
+    
+    # Reset patient logs (Bitácora)
+    patient.clinical_log = None
+    session.add(patient)
+    
+    session.commit()
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "RESET_IA_PATIENT", details={"patient_id": patient_id})
+    
+    return {"ok": True, "message": "IA patient data reset successfully"}
+
+
+@router.patch("/patients/{patient_id}/ia-prompt")
+def update_ia_patient_prompt(
+    patient_id: int,
+    data: IaPromptRequest,
+    session: Session = Depends(get_session),
+    current_user: Psychologist = Depends(get_current_user)
+):
+    """Update the personality prompt for an IA patient."""
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    
+    patient = session.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if not patient.is_ia_patient:
+        raise HTTPException(status_code=400, detail="Only IA patients have personality prompts")
+    
+    patient.ia_patient_prompt = data.ia_patient_prompt
+    session.add(patient)
+    session.commit()
+    session.refresh(patient)
+    
+    log_action(session, current_user.id, "psychologist", current_user.name, "UPDATE_IA_PROMPT", details={"patient_id": patient_id})
+    
+    return {"ok": True, "ia_patient_prompt": patient.ia_patient_prompt}
