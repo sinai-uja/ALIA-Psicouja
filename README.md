@@ -103,6 +103,39 @@ For detailed technical specifications, internal structures, environment configur
 
 ---
 
+## 🖼️ Application Showcase
+
+Explore the interactive interface of the PsicoUJA platform:
+
+````carousel
+### 🩺 1. Psychologist Dashboard
+An elegant and premium dark-themed interface built with Next.js 16 and Tailwind CSS 4, providing real-time clinical metrics, active session counts, and interactive tracking.
+
+![Psychologist Dashboard](./dashboard.png)
+<!-- slide -->
+### 👥 2. Patient Management
+A high-fidelity dashboard containing the complete listing of active patients, their assigned treatment protocols, risk levels, and direct action triggers.
+
+![Patient Management](./pacientes.png)
+<!-- slide -->
+### 📊 3. Clinical Patient Profile
+Detailed telemetry tracking for each patient, displaying dynamic progression charts (EMA tracking), questionnaire logs, and historical session notes.
+
+![Patient Profile Detail](./paciente.png)
+<!-- slide -->
+### 💬 4. Secure Chat & AI Supervisor
+Real-time encrypted messaging channel between therapist and patient, featuring active side-by-side AI Supervision that recommends clinical interventions in real-time.
+
+![Secure Chat & AI Supervision](./chat.png)
+<!-- slide -->
+### 🤖 5. AI Patient Simulator Sandbox
+A dedicated training module allowing psychologists in training to conduct simulated consultations with custom AI patient personas under different clinical models (CBT, ACT).
+
+![AI-Simulated Practice Client](./simulador.png)
+````
+
+---
+
 ## 🚀 Unified Local Installation & Quick Start
 
 To run the entire ecosystem locally on your machine, follow these instructions.
