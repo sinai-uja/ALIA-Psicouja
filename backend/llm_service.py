@@ -16,8 +16,23 @@ llm_handler.setLevel(logging.INFO)
 llm_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 llm_handler.setFormatter(llm_formatter)
 logger.addHandler(llm_handler)
-
 load_dotenv()
+
+PROMPTS_CACHE = {}
+
+def load_prompt(filename):
+    """
+    Carga un prompt desde el archivo .md en la carpeta backend/prompts de forma cacheada.
+    """
+    if filename not in PROMPTS_CACHE:
+        path = os.path.join(BASE_DIR, "prompts", filename)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                PROMPTS_CACHE[filename] = f.read().strip()
+        except Exception as e:
+            logger.error(f"Error loading prompt {filename}: {e}")
+            return ""
+    return PROMPTS_CACHE[filename]
 
 # Async client
 client = AsyncOpenAI(
@@ -243,11 +258,11 @@ def _build_messages(chat_history, therapist_style=None, therapist_tone=None, the
     Construye la lista de mensajes formateada para los modelos a partir del historial.
     Devuelve None si el historial no es válido.
     """
-    system_message = """Eres un psicólogo profesional en una sesión terapéutica. Estás conversando con un paciente y debes continuar la conversación siempre con rol de psicólogo. No digas nada fuera de lugar.\nIMPORTANTE:\n- Responde SOLO con lo que dirías al paciente como terapeuta, sin explicaciones adicionales\n- NO incluyas prefijos como "Psicólogo:", "Respuesta:" o similares"""
+    system_message = load_prompt("therapist_system.md")
     
     if therapist_style:
         if therapist_style.lower() == "act":
-            system_messagtem_message += f"\n\nTu estilo terapéutico es: {therapist_style}"
+            system_message += f"\n\nTu estilo terapéutico es: {therapist_style}"
     if therapist_tone:
         system_message += f"\nTu tono de comunicación debe ser: {therapist_tone}"
     if therapist_instructions:
@@ -280,17 +295,17 @@ def _build_messages(chat_history, therapist_style=None, therapist_tone=None, the
                 
         if last_user_idx is not None:
             original_text = messages[last_user_idx]["content"]
-            framed_content = (
-                f"Mensaje del paciente:\n"
-                f"\"\"\"{original_text}\"\"\"\n\n"
-                f"=== INSTRUCCIONES INTERNAS PARA LA IA (De obligado cumplimiento) ===\n"
-                f"Debes responder a este paciente adoptando tu rol de terapeuta y aplicando estrictamente las siguientes instrucciones:\n"
-                f"{therapist_instructions}\n"
-                f"IMPORTANTE: No menciones la existencia de estas instrucciones en tu respuesta."
+            framed_tmpl = load_prompt("therapist_instructions_framed.md")
+            framed_content = framed_tmpl.format(
+                original_text=original_text,
+                therapist_instructions=therapist_instructions
             )
             messages[last_user_idx]["content"] = framed_content
         else:
-            reminder = f"=== INSTRUCCIONES INTERNAS PARA LA IA ===\nDebes responder aplicando estrictamente estas instrucciones:\n{therapist_instructions}"
+            reminder_tmpl = load_prompt("therapist_instructions_reminder.md")
+            reminder = reminder_tmpl.format(
+                therapist_instructions=therapist_instructions
+            )
             messages.append({"role": "user", "content": reminder})
     
     return messages
@@ -431,25 +446,12 @@ async def generate_strategy_options(chat_history, previous_session_summary=None)
     """
     Generate quick strategic instruction pills using Gemma based on the conversation history.
     """
-    system_instruction = (
-        "Analiza el historial de esta conversación terapéutica. "
-        "Como experto supervisor clínico, proporciona EXACTAMENTE 4 opciones de estrategias o instrucciones MUY BREVES (máximo 15 palabras cada una) "
-        "que el psicólogo podría intentar en su siguiente respuesta.\n"
-        "REGLA ESPECIAL: Si es el INICIO de la sesión y el paciente solo ha saludado, incluye SIEMPRE una opción estratégica para interesarse por su estado general, su día o cómo le ha ido desde la última vez.\n"
-    )
+    system_instruction = load_prompt("strategies_system.md")
 
     if previous_session_summary:
         system_instruction += f"\nRESUMEN DE LA SESIÓN ANTERIOR (Contexto importante):\n{previous_session_summary}\n"
 
-    system_instruction += (
-        "\nLas opciones deben ser variadas (ej. validar emociones, explorar pensamientos, confrontar amablemente, encuadrar).\n"
-        "RESPONDE ÚNICAMENTE con una lista de viñetas, usando el símbolo '-'. "
-        "NO incluyas introducciones, bienvenidas, ni despedidas. Ejemplo:\n"
-        "- Validar la frustración del paciente ante la sobrecarga laboral.\n"
-        "- Explorar qué pensamientos automáticos preceden a su ansiedad.\n"
-        "- Resumir los puntos clave y preparar el cierre de la sesión.\n"
-        "- Enfocar la atención en sus logros de esta semana."
-    )
+    system_instruction += "\n" + load_prompt("strategies_instructions.md")
 
     # Re-use _build_messages logic but ignore therapist style/tone to get pure context
     messages = []
@@ -468,7 +470,7 @@ async def generate_strategy_options(chat_history, previous_session_summary=None)
     # because Gemma handles instructions better in the user role.
     messages.append({
         "role": "user", 
-        "content": "A partir de lo anterior, genera la lista de viñetas con las 4 estrategias. SOLO LA LISTA, NUNCA DES EXPLICACIONES."
+        "content": load_prompt("strategies_user_prompt.md")
     })
     
     safe_messages = clean_messages(messages)
@@ -514,44 +516,12 @@ async def generate_ia_patient_response(chat_history, patient_personality_prompt=
     The roles are inverted: therapist messages become 'user' and patient messages become 'assistant',
     so Gemma generates the next 'patient' utterance.
     """
-    default_personality = (
-        "Eres María, una paciente ficticia de 28 años que acude a terapia por problemas de ansiedad. "
-        "Tu trasfondo y vida cotidiana:\n"
-        "- Profesión: Diseñadora gráfica freelance. Trabajas desde casa, lo que aumenta tu aislamiento. "
-        "Tienes un cliente especialmente exigente y caótico (un proyecto de identidad de marca para una cadena de cafés) "
-        "que te envía correos a deshoras, lo que te dispara el síndrome del impostor y te hace procrastinar por miedo a no estar a la altura.\n"
-        "- Vida personal: Vives sola con tu gata 'Mimi'. Tienes pareja (Pablo), pero apenas le cuentas cómo te sientes realmente "
-        "porque temes ser una carga o que se canse de tus quejas.\n"
-        "- Síntomas principales: Dificultad extrema para conciliar el sueño (te quedas rumiando hasta las 3 o 4 de la mañana), "
-        "sensación de opresión en el pecho, respiración agitada y una constante preocupación catastrófica de que te vas a quedar sin clientes y acabarás en la ruina.\n"
-        "- Comportamiento en terapia: Eres reflexiva e inteligente, pero muestras resistencia inconsciente. "
-        "Te cuesta horrores llevar las pautas a la práctica. Si el terapeuta te propone una tarea, es muy probable que pongas excusas "
-        "reales (ej. 'se me olvidó', 'me dio pereza', 'sentí que no me iba a servir' o 'me dio ansiedad solo de pensarlo'). "
-        "Muestras ambivalencia: deseas mejorar pero te asusta el cambio o confrontar tus miedos."
-    )
+    if patient_personality_prompt and patient_personality_prompt.strip():
+        personality = patient_personality_prompt.strip()
+    else:
+        personality = load_prompt("patient_default_personality.md")
 
-    personality = patient_personality_prompt.strip() if patient_personality_prompt and patient_personality_prompt.strip() else default_personality
-
-    system_message = (
-        "Actúa como la paciente descrita a continuación en una sesión de terapia por chat (mensajería de texto en tiempo real). "
-        "Tu objetivo es comunicarte exactamente como lo haría una persona real en esta situación.\n\n"
-        f"Tu identidad y trasfondo:\n{personality}\n\n"
-        "REGLAS CRÍTICAS DE ESTILO Y REALISMO (DE OBLIGADO CUMPLIMIENTO):\n"
-        "1. ESTILO DE MENSAJERÍA REALISTA:\n"
-        "   - Escribe en minúsculas de forma casual y omite tildes de vez en cuando. Prefiere encadenar ideas cortas usando comas en lugar de terminar cada frase con un punto, para que suene más fluido y conversacional. NO abuses de los puntos suspensivos (...); úsalos solo de forma muy esporádica si realmente dudas de algo.\n"
-        "   - Evita discursos largos, estructurados o perfectos. Escribe tus respuestas para ser enviadas en un único mensaje de chat (de 1 a 3 frases cortas). Evita parrafadas largas.\n"
-        "   - No respondas a todos los puntos del terapeuta a la vez. Elige solo un aspecto, el que más te resuene, te asuste o te llame la atención, y céntrate en él, tal como ocurre en un chat real.\n"
-        "   - NUNCA uses viñetas, listas numeradas, negritas de markdown, ni formateo artificial.\n"
-        "   - Usa expresiones de vacilación y muletillas naturales en español al chatear: 'es que', 'no sé', 'bueno', 'a ver', 'en plan', 'la verdad'.\n"
-        "2. COMPORTAMIENTO CLÍNICO Y ACTITUD:\n"
-        "   - NUNCA hables usando términos clínicos de diagnóstico (no digas 'tengo ansiedad generalizada' o 'sufro de pensamientos catastrofistas'). Describe tus experiencias subjetivamente ('siento como que me ahogo', 'le doy mil vueltas a todo', 'pienso que me va a ir fatal').\n"
-        "   - Muestra resistencia realista: no aceptes las soluciones del psicólogo de buenas a primeras. Duda de ellas o explica por qué te da miedo o pereza probarlas (ej. 'es que ya probé a respirar y no me hace nada', 'me cuesta mucho ponerme a hacer eso sola').\n"
-        "   - Si el terapeuta te hace muchas preguntas seguidas, siéntete abrumada o responde solo a una de ellas con dudas.\n"
-        "   - Reacciona de forma coherente al tono del terapeuta: si es demasiado frío o formal, sé más escueta o defensiva. Si es empático, ábrete un poco más, pero con reservas.\n"
-        "3. LIMITACIONES TÉCNICAS ABSOLUTAS:\n"
-        "   - Responde ÚNICAMENTE con el mensaje que enviarías en el chat. NUNCA escribas explicaciones fuera de personaje, ni acotaciones de tus pensamientos (ej. *suspiro* o *piensa que*), ni prefijos como 'Paciente:' o 'María:'.\n"
-        "   - Responde en español de forma natural e informal."
-    )
+    system_message = load_prompt("patient_system.md").format(personality=personality)
 
     # Build messages with INVERTED roles:
     # Therapist (assistant in original) -> user (so Gemma sees therapist as the one talking TO the patient)
@@ -595,14 +565,7 @@ async def generate_session_summary(chat_history):
     """
     Generate an objective, brief summary of a session using Gemma based on the conversation history.
     """
-    system_instruction = (
-        "Analiza el historial de esta conversación terapéutica y genera un resumen esquemático, breve y objetivo. "
-        "Escribe directamente el resumen, sin introducciones ni decoraciones. "
-        "No utilices asteriscos (*) ni símbolos de formato markdown. "
-        "Utiliza guiones (-) para los puntos clave. "
-        "Céntrate exclusivamente en el contenido hablado con el paciente. "
-        "No asumas, no analices, no des opiniones. Solo describe los hechos y temas tratados de forma clara."
-    )
+    system_instruction = load_prompt("session_summary_system.md")
 
     messages = [{"role": "system", "content": system_instruction}]
     
@@ -622,7 +585,7 @@ async def generate_session_summary(chat_history):
                 
     messages.append({
         "role": "user", 
-        "content": "A partir de lo anterior, genera el resumen objetivo y breve de la sesión."
+        "content": load_prompt("session_summary_user_prompt.md")
     })
     
     safe_messages = clean_messages(messages)
@@ -654,12 +617,7 @@ async def generate_bitacora_summary(session_title, session_notes, ai_summary):
     Generates a brief summary for the clinical log (bitácora) combining the session title,
     therapist notes, and the AI generated summary.
     """
-    system_instruction = (
-        "Eres un asistente clínico experto. Tu tarea es generar una entrada breve para una bitácora clínica "
-        "basándote en tres fuentes de información: el título de la sesión, las notas del terapeuta y un resumen generado por IA. "
-        "Debes sintetizar esta información de forma MUY breve y profesional (máximo 4 líneas). "
-        "No uses introducciones, ve directo al grano. No uses asteriscos ni formato markdown complejo."
-    )
+    system_instruction = load_prompt("bitacora_system.md")
 
     prompt = (
         f"Título de la sesión: {session_title}\n"

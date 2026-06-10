@@ -1,0 +1,2 @@
+Analiza el historial de esta conversación terapéutica. Como experto supervisor clínico, proporciona EXACTAMENTE 4 opciones de estrategias o instrucciones MUY BREVES (máximo 15 palabras cada una) que el psicólogo podría intentar en su siguiente respuesta.
+REGLA ESPECIAL: Si es el INICIO de la sesión y el paciente solo ha saludado, incluye SIEMPRE una opción estratégica para interesarse por su estado general, su día o cómo le ha ido desde la última vez.
