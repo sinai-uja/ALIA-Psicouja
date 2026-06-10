@@ -30,13 +30,27 @@ export function initializeFirebaseApp(): FirebaseApp | null {
         return app
     }
 
-    if (getApps().length === 0) {
-        app = initializeApp(firebaseConfig)
-    } else {
-        app = getApps()[0]
+    // Check if Firebase configuration is missing or using default placeholders
+    if (
+        !firebaseConfig.projectId || 
+        firebaseConfig.projectId === "" || 
+        firebaseConfig.projectId.includes("your_firebase_project_id_here")
+    ) {
+        console.warn("[Firebase] Missing or placeholder project ID. Firebase will not be initialized.")
+        return null
     }
 
-    return app
+    try {
+        if (getApps().length === 0) {
+            app = initializeApp(firebaseConfig)
+        } else {
+            app = getApps()[0]
+        }
+        return app
+    } catch (error) {
+        console.error("[Firebase] Failed to initialize Firebase App:", error)
+        return null
+    }
 }
 
 /**
@@ -50,7 +64,12 @@ export function getFirebaseMessaging(): Messaging | null {
     if (!messaging) {
         const firebaseApp = initializeFirebaseApp()
         if (firebaseApp) {
-            messaging = getMessaging(firebaseApp)
+            try {
+                messaging = getMessaging(firebaseApp)
+            } catch (error) {
+                console.error("[Firebase] Failed to get Firebase Messaging instance:", error)
+                messaging = null
+            }
         }
     }
 
@@ -79,7 +98,7 @@ export async function requestFCMToken(): Promise<string | null> {
 
         const messagingInstance = getFirebaseMessaging()
         if (!messagingInstance) {
-            console.error("Firebase Messaging not initialized")
+            console.warn("[FCM] Firebase Messaging not initialized (push notifications disabled due to missing configuration)")
             return null
         }
 

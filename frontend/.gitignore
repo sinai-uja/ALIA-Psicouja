@@ -4,6 +4,9 @@ node_modules
 .next/
 package-lock.json
 
+# pnpm
+.pnpm-store/
+
 # Environment variables
 .env
 .env.local
