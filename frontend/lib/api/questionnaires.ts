@@ -358,3 +358,33 @@ export async function updateQuestionnaireCompletion(id: string, updates: { sched
         return null;
     }
 }
+
+export async function generateQuestionnaireWithAI(prompt: string): Promise<{ title: string; description?: string; icon: string; questions: Question[] } | null> {
+    try {
+        const res = await fetchWithAuth(`${API_URL}/questionnaires/generate`, {
+            method: 'POST',
+            body: JSON.stringify({ prompt })
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return {
+            title: data.title || "",
+            description: data.description || "",
+            icon: data.icon || "FileQuestion",
+            questions: (data.questions || []).map((q: any) => ({
+                id: q.id || Math.random().toString(),
+                text: q.text || "",
+                type: q.type || "openText",
+                options: q.options,
+                min: q.min,
+                max: q.max,
+                minLabel: q.minLabel,
+                maxLabel: q.maxLabel
+            }))
+        };
+    } catch (e) {
+        console.error(e);
+        return null;
+    }
+}
+

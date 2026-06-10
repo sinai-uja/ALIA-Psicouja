@@ -1,14 +1,31 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 from typing import List
+from pydantic import BaseModel
 
 from database import get_session
 from models import Questionnaire, QuestionnaireRead, Psychologist
 from auth import get_current_user
 from logging_utils import log_action
 from utils.logger import logger
+from llm_service import generate_questionnaire_with_ai
 
 router = APIRouter()
+
+class QuestionnaireGenerateRequest(BaseModel):
+    prompt: str
+
+@router.post("/generate")
+async def generate_questionnaire_api(
+    req: QuestionnaireGenerateRequest,
+    current_user: Psychologist = Depends(get_current_user)
+):
+    try:
+        generated = await generate_questionnaire_with_ai(req.prompt)
+        return generated
+    except Exception as e:
+        logger.error(f"Error in generate_questionnaire_api: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("", response_model=QuestionnaireRead)
 def create_questionnaire(

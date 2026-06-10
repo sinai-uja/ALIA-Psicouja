@@ -6,7 +6,7 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
     CheckCircle2,
@@ -34,7 +34,9 @@ import {
     Sun,
     Flame,
     Star,
-    MoreHorizontal
+    MoreHorizontal,
+    Sparkles,
+    Loader2
 } from "lucide-react"
 import { useLanguage } from "@/contexts/language-context"
 import * as api from "@/lib/api"
@@ -172,6 +174,11 @@ export default function QuestionnairePage() {
 
     const [selectedIcon, setSelectedIcon] = useState("FileQuestion")
 
+    // AI Questionnaire Generator State
+    const [aiPrompt, setAiPrompt] = useState("")
+    const [isGenerating, setIsGenerating] = useState(false)
+    const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
+
     // Form State (Assignment)
     const [selectedPatient, setSelectedPatient] = useState("")
     const [selectedQuestionnaire, setSelectedQuestionnaire] = useState("")
@@ -234,6 +241,33 @@ export default function QuestionnairePage() {
         setNewQuestionText("")
         setNewQuestionType("likert")
         resetQuestionConfig()
+    }
+
+    const handleGenerateWithAi = async () => {
+        if (!aiPrompt.trim()) return
+        setIsGenerating(true)
+        try {
+            const result = await api.generateQuestionnaireWithAI(aiPrompt)
+            if (result) {
+                setTitle(result.title)
+                setSelectedIcon(result.icon || "FileQuestion")
+                setQuestions(result.questions)
+                setAiPrompt("")
+            } else {
+                alert("No se pudo generar el cuestionario con IA.")
+            }
+        } catch (e) {
+            console.error(e)
+            alert("Error al conectar con la IA.")
+        } finally {
+            setIsGenerating(false)
+        }
+    }
+
+    const handleSaveEditedQuestion = () => {
+        if (!editingQuestion) return
+        setQuestions(questions.map(q => q.id === editingQuestion.id ? editingQuestion : q))
+        setEditingQuestion(null)
     }
 
     const resetQuestionConfig = () => {
@@ -436,6 +470,54 @@ export default function QuestionnairePage() {
                             {editingId ? t("editQuestionnaire") : t("createQuestionnaire")}
                         </h1>
                     </div>
+
+                    {!editingId && (
+                        <Card className="rounded-2xl border border-calm-teal/20 bg-calm-teal/5 shadow-soft">
+                            <CardHeader className="pb-3">
+                                <CardTitle className="text-base font-semibold text-calm-teal flex items-center gap-2">
+                                    <Sparkles className="h-5 w-5" />
+                                    Crear cuestionario con Inteligencia Artificial
+                                </CardTitle>
+                                <CardDescription>
+                                    Escribe un prompt que describa el tema o propósito de tu cuestionario (ej. "Cuestionario de 5 preguntas sobre la calidad del sueño y hábitos nocturnos") y la IA generará el título, ícono y preguntas correspondientes.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="pb-6">
+                                <div className="flex gap-2">
+                                    <Input
+                                        value={aiPrompt}
+                                        onChange={(e) => setAiPrompt(e.target.value)}
+                                        placeholder="Ej. Nivel de ansiedad y estrés académico..."
+                                        disabled={isGenerating}
+                                        className="rounded-xl border-soft-gray bg-white h-11"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                handleGenerateWithAi();
+                                            }
+                                        }}
+                                    />
+                                    <Button
+                                        onClick={handleGenerateWithAi}
+                                        disabled={isGenerating || !aiPrompt.trim()}
+                                        className="bg-calm-teal text-white hover:bg-calm-teal/90 rounded-xl px-6 h-11 shrink-0 flex items-center gap-2"
+                                    >
+                                        {isGenerating ? (
+                                            <>
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                <span>Generando...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="h-4 w-4" />
+                                                <span>Generar</span>
+                                            </>
+                                        )}
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
                     <Card className="rounded-2xl border-soft-gray shadow-soft">
                         <CardContent className="pt-6 space-y-4">
                             <div className="space-y-4">
@@ -489,9 +571,14 @@ export default function QuestionnairePage() {
                                             </p>
                                         )}
                                     </div>
-                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteQuestion(q.id)} className="h-8 w-8 p-0 text-soft-coral hover:bg-soft-coral/10 rounded-lg shrink-0">
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
+                                    <div className="flex gap-1 shrink-0">
+                                        <Button variant="ghost" size="sm" onClick={() => setEditingQuestion(q)} className="h-8 w-8 p-0 text-gray-600 hover:text-calm-teal hover:bg-calm-teal/10 rounded-lg">
+                                            <Edit className="h-4 w-4" />
+                                        </Button>
+                                        <Button variant="ghost" size="sm" onClick={() => handleDeleteQuestion(q.id)} className="h-8 w-8 p-0 text-soft-coral hover:bg-soft-coral/10 rounded-lg">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
                                 </CardContent>
                             </Card>
                         ))}
@@ -553,6 +640,116 @@ export default function QuestionnairePage() {
                             {t("saveQuestionnaire")}
                         </Button>
                     </div>
+
+                    <Dialog open={editingQuestion !== null} onOpenChange={(open) => { if (!open) setEditingQuestion(null) }}>
+                        <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white">
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2 text-neutral-charcoal text-lg font-bold">
+                                    <Edit className="h-5 w-5 text-calm-teal" />
+                                    Editar Pregunta
+                                </DialogTitle>
+                                <DialogDescription className="text-sm text-muted-foreground">
+                                    Modifica el texto o la configuración de esta pregunta.
+                                </DialogDescription>
+                            </DialogHeader>
+                            {editingQuestion && (
+                                <div className="space-y-4 py-4">
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-medium text-neutral-charcoal">Texto de la pregunta</Label>
+                                        <Input
+                                            value={editingQuestion.text}
+                                            onChange={(e) => setEditingQuestion({ ...editingQuestion, text: e.target.value })}
+                                            className="rounded-xl border-soft-gray"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-sm font-medium text-neutral-charcoal">Tipo de pregunta</Label>
+                                        <select
+                                            value={editingQuestion.type}
+                                            onChange={(e) => {
+                                                const newType = e.target.value as QuestionType;
+                                                const updated: Question = { ...editingQuestion, type: newType };
+                                                if (newType === 'likert') {
+                                                    updated.min = editingQuestion.min ?? 1;
+                                                    updated.max = editingQuestion.max ?? 10;
+                                                    updated.minLabel = editingQuestion.minLabel ?? "Nada";
+                                                    updated.maxLabel = editingQuestion.maxLabel ?? "Mucho";
+                                                } else if (newType === 'frequency') {
+                                                    updated.options = editingQuestion.options ?? ["Nunca", "A veces", "Siempre"];
+                                                }
+                                                setEditingQuestion(updated);
+                                            }}
+                                            className="w-full h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm focus:outline-none focus:ring-2 focus:ring-calm-teal/20"
+                                        >
+                                            <option value="likert">Escala Likert</option>
+                                            <option value="frequency">Frecuencia</option>
+                                            <option value="openText">Pregunta abierta</option>
+                                        </select>
+                                    </div>
+                                    {editingQuestion.type === 'likert' && (
+                                        <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-xl">
+                                            <div className="space-y-2">
+                                                <Label className="text-xs text-muted-foreground">Mínimo</Label>
+                                                <Input
+                                                    type="number"
+                                                    value={editingQuestion.min ?? 1}
+                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, min: Number(e.target.value) })}
+                                                    className="h-8 bg-white"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-xs text-muted-foreground">Máximo</Label>
+                                                <Input
+                                                    type="number"
+                                                    value={editingQuestion.max ?? 10}
+                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, max: Number(e.target.value) })}
+                                                    className="h-8 bg-white"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-xs text-muted-foreground">Etiqueta Mín</Label>
+                                                <Input
+                                                    value={editingQuestion.minLabel ?? ""}
+                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, minLabel: e.target.value })}
+                                                    className="h-8 bg-white"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <Label className="text-xs text-muted-foreground">Etiqueta Máx</Label>
+                                                <Input
+                                                    value={editingQuestion.maxLabel ?? ""}
+                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, maxLabel: e.target.value })}
+                                                    className="h-8 bg-white"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                    {editingQuestion.type === 'frequency' && (
+                                        <div className="space-y-2 p-4 bg-muted/30 rounded-xl">
+                                            <Label className="text-xs text-muted-foreground">Opciones (separadas por coma)</Label>
+                                            <Input
+                                                value={(editingQuestion.options ?? []).join(", ")}
+                                                onChange={(e) => setEditingQuestion({ ...editingQuestion, options: e.target.value.split(',').map(o => o.trim()).filter(Boolean) })}
+                                                className="h-9 bg-white"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                            <DialogFooter className="flex gap-2">
+                                <Button variant="ghost" onClick={() => setEditingQuestion(null)} className="rounded-xl">
+                                    Cancelar
+                                </Button>
+                                <Button
+                                    onClick={handleSaveEditedQuestion}
+                                    disabled={!editingQuestion?.text.trim()}
+                                    className="bg-calm-teal text-white hover:bg-calm-teal/90 rounded-xl px-6"
+                                >
+                                    Guardar Cambios
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </DashboardLayout>
         )

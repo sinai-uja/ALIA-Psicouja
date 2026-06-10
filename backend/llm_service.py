@@ -646,3 +646,69 @@ async def generate_bitacora_summary(session_title, session_notes, ai_summary):
     except Exception as e:
         logger.error(f"Error in generate_bitacora_summary: {e}")
         return "Error al generar la entrada de la bitácora."
+
+async def generate_questionnaire_with_ai(user_prompt: str) -> dict:
+    """
+    Genera un cuestionario psicológico en formato JSON a partir del prompt de un usuario.
+    """
+    import json
+    import re
+
+    logger.info(f"Generating questionnaire for prompt: {user_prompt}")
+    
+    # Cargar prompt template
+    prompt_tmpl = load_prompt("generate_questionnaire.md")
+    system_content = prompt_tmpl.replace("{user_prompt}", user_prompt)
+    
+    # Messages
+    messages = [
+        {"role": "user", "content": system_content}
+    ]
+    
+    try:
+        logger.info("Calling Qwen model for questionnaire generation...")
+        response = await client.chat.completions.create(
+            model=MODEL_QWEN,
+            messages=messages,
+            max_tokens=1500,
+            temperature=0.5,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}}
+        )
+        content = response.choices[0].message.content.strip()
+        logger.info("Qwen call for questionnaire successful.")
+        
+        # Limpieza básica para extraer el bloque JSON
+        if "<thinking>" in content and "</thinking>" in content:
+            content = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL).strip()
+            
+        # Buscar bloques de código ```json ... ``` o ``` ... ```
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', content, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            first_brace = content.find('{')
+            last_brace = content.rfind('}')
+            if first_brace != -1 and last_brace != -1:
+                json_str = content[first_brace:last_brace+1]
+            else:
+                json_str = content
+                
+        # Parsear JSON
+        data = json.loads(json_str)
+        return data
+        
+    except Exception as e:
+        logger.error(f"Error in generate_questionnaire_with_ai: {e}")
+        return {
+            "title": "Cuestionario no generado",
+            "description": "Hubo un error al intentar generar el cuestionario con IA.",
+            "icon": "FileQuestion",
+            "questions": [
+                {
+                    "id": "q1",
+                    "text": f"Error: {str(e)}",
+                    "type": "openText"
+                }
+            ]
+        }
+
