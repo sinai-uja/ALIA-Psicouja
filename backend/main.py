@@ -11,7 +11,7 @@ from utils.logger import logger, LOGGING_CONFIG
 
 load_dotenv()
 
-from database import create_db_and_tables, engine
+from database import create_db_and_tables, migrate_db_schema, engine
 from models import Psychologist, Questionnaire
 from auth import hash_password
 
@@ -37,6 +37,7 @@ from services.firebase_service import initialize_firebase
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    migrate_db_schema()
     
     # Create Default Super Admin if no users exist or specific superadmin is missing
     with Session(engine) as session:

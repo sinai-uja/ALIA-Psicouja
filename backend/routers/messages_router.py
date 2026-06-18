@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from typing import List
 
@@ -13,9 +13,32 @@ from utils.logger import logger
 
 router = APIRouter()
 
+async def run_safety_analysis(message_id: int):
+    from database import engine
+    from models import Message
+    from llm_service import analyze_message_safety
+    
+    with Session(engine) as session:
+        db_message = session.get(Message, message_id)
+        if not db_message or not db_message.is_from_patient:
+            return
+        
+        try:
+            logger.info(f"Running safety analysis for message {message_id}...")
+            safety_res = await analyze_message_safety(db_message.content)
+            db_message.safety_status = safety_res.get("safety_status", "safe")
+            db_message.safety_explanation = safety_res.get("safety_explanation", "")
+            db_message.safety_keywords = safety_res.get("safety_keywords")
+            session.add(db_message)
+            session.commit()
+            logger.success(f"Safety analysis completed for message {message_id}: {db_message.safety_status} (Keywords: {db_message.safety_keywords})")
+        except Exception as e:
+            logger.error(f"Error running safety analysis for message {message_id}: {e}")
+
 @router.post("", response_model=MessageRead)
 def create_message(
     message: MessageCreate, 
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session), 
     current_user = Depends(get_current_actor)
 ):
@@ -52,6 +75,9 @@ def create_message(
     session.add(db_message)
     session.commit()
     session.refresh(db_message)
+
+    if db_message.is_from_patient:
+        background_tasks.add_task(run_safety_analysis, db_message.id)
 
     # 4. (Opcional) Vincular el Log de IA con el mensaje final
     if message.ai_suggestion_log_id:

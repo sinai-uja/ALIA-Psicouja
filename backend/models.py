@@ -387,6 +387,10 @@ class Message(SQLModel, table=True):
     was_edited_by_human: bool = Field(default=False)
     ai_suggestion_log_id: Optional[int] = Field(default=None, foreign_key="aisuggestionlog.id")
 
+    safety_status: Optional[str] = Field(default=None)
+    safety_explanation: Optional[str] = Field(default=None)
+    safety_keywords: Optional[str] = Field(default=None)
+
 class MessageRead(SQLModel):
     id: int
     patient_id: int
@@ -396,6 +400,9 @@ class MessageRead(SQLModel):
     created_at: datetime
     was_edited_by_human: bool = False
     ai_suggestion_log_id: Optional[int] = None
+    safety_status: Optional[str] = None
+    safety_explanation: Optional[str] = None
+    safety_keywords: Optional[str] = None
 
 class MessageCreate(SQLModel):
     patient_id: int

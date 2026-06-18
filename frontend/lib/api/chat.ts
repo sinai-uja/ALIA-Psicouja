@@ -9,6 +9,9 @@ export interface ChatMessage {
     created_at: string;
     was_edited_by_human: boolean;
     ai_suggestion_log_id: number;
+    safety_status?: string;
+    safety_explanation?: string;
+    safety_keywords?: string;
 }
 
 export interface AiRecommendationsResponse {
@@ -265,6 +268,31 @@ export async function generateSessionNotes(patientId: string, messages: any[]): 
         return await res.json();
     } catch (e) {
         console.error("Error generating session notes:", e);
+        return null;
+    }
+}
+
+export interface DistressAnalysisResult {
+    reasons: string[];
+    context: string;
+    recommendations: string[];
+}
+
+export async function exploreDistressReasons(patientId: number | string, targetMessageId?: number | string): Promise<DistressAnalysisResult | null> {
+    try {
+        const res = await fetchWithAuth(`${API_URL}/chat/patients/${patientId}/explore-reasons`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                target_message_id: targetMessageId ? parseInt(targetMessageId.toString()) : null
+            })
+        });
+        if (!res.ok) return null;
+        return await res.json();
+    } catch (e) {
+        console.error("Error exploring distress reasons:", e);
         return null;
     }
 }

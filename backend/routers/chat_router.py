@@ -1,6 +1,6 @@
 import json
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from typing import List, Optional
@@ -248,6 +248,7 @@ class IaPatientRespondRequest(BaseModel):
 @router.post("/ia-patient/respond")
 async def ia_patient_respond(
     req: IaPatientRespondRequest,
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
     current_user: Psychologist = Depends(get_current_user)
 ):
@@ -303,6 +304,10 @@ async def ia_patient_respond(
     session.commit()
     session.refresh(new_message)
     
+    # Enqueue safety analysis for IA patient response in background
+    from routers.messages_router import run_safety_analysis
+    background_tasks.add_task(run_safety_analysis, new_message.id)
+    
     logger.info(f"IA Patient message saved: ID {new_message.id}")
     
     return {
@@ -315,3 +320,79 @@ async def ia_patient_respond(
         "was_edited_by_human": False,
         "ai_suggestion_log_id": None
     }
+
+
+class ExploreReasonsRequest(BaseModel):
+    target_message_id: Optional[int] = None
+
+
+@router.post("/patients/{patient_id}/explore-reasons")
+async def explore_reasons(
+    patient_id: int,
+    req: Optional[ExploreReasonsRequest] = None,
+    session: Session = Depends(get_session),
+    current_user: Psychologist = Depends(get_current_user)
+):
+    from auth import verify_patient_access
+    verify_patient_access(patient_id, current_user, session)
+    
+    # 1. Obtener mensajes del chat actual
+    from models import Message
+    from sqlmodel import select
+    
+    target_message = None
+    if req and req.target_message_id:
+        target_message = session.get(Message, req.target_message_id)
+        
+    if target_message:
+        messages_statement = (
+            select(Message)
+            .where(Message.patient_id == patient_id)
+            .where(Message.created_at <= target_message.created_at)
+            .order_by(Message.created_at)
+        )
+    else:
+        messages_statement = (
+            select(Message)
+            .where(Message.patient_id == patient_id)
+            .order_by(Message.created_at)
+        )
+        
+    db_messages = session.exec(messages_statement).all()
+    
+    chat_history = [
+        {
+            "id": m.id,
+            "content": m.content,
+            "is_from_patient": m.is_from_patient,
+            "safety_status": m.safety_status,
+            "safety_explanation": m.safety_explanation,
+            "safety_keywords": m.safety_keywords,
+        }
+        for m in db_messages
+    ]
+    
+    # 2. Obtener sesiones anteriores
+    from models import Session as ClinicalSession
+    sessions_statement = select(ClinicalSession).where(ClinicalSession.patient_id == patient_id).order_by(ClinicalSession.date)
+    db_sessions = session.exec(sessions_statement).all()
+    
+    previous_sessions_summaries = [
+        {
+            "date": s.date.strftime("%Y-%m-%d") if s.date else "Fecha de sesión",
+            "description": s.description,
+            "notes": s.notes,
+            "ai_summary": s.ai_summary
+        }
+        for s in db_sessions
+    ]
+    
+    # 3. Llamar a explore_distress_reasons
+    from llm_service import explore_distress_reasons
+    analysis_result = await explore_distress_reasons(
+        chat_history, 
+        previous_sessions_summaries, 
+        target_message_content=target_message.content if target_message else None
+    )
+    
+    return analysis_result
