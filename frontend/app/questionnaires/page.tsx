@@ -1,12 +1,12 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
     CheckCircle2,
@@ -34,9 +34,7 @@ import {
     Sun,
     Flame,
     Star,
-    MoreHorizontal,
-    Sparkles,
-    Loader2
+    MoreHorizontal
 } from "lucide-react"
 import { useLanguage } from "@/contexts/language-context"
 import * as api from "@/lib/api"
@@ -137,7 +135,206 @@ const getSafeDate = (dateStr: string) => {
     return new Date(dateStr);
 }
 
-// ... inside component ...
+// Custom Searchable Grouped Patient Select
+interface PsychologistGroup {
+    id: string | number
+    name: string
+    patients: any[]
+}
+
+interface SearchablePatientSelectProps {
+    patients: any[]
+    patientsByPsychologist: PsychologistGroup[]
+    selectedValue: string
+    onChange: (value: string) => void
+    placeholder: string
+}
+
+function SearchablePatientSelect({
+    patients,
+    patientsByPsychologist,
+    selectedValue,
+    onChange,
+    placeholder
+}: SearchablePatientSelectProps) {
+    const [isOpen, setIsOpen] = useState(false)
+    const [searchTerm, setSearchTerm] = useState("")
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    // Close on outside click
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false)
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside)
+        return () => document.removeEventListener("mousedown", handleClickOutside)
+    }, [])
+
+    const selectedPatient = patients.find(p => String(p.id) === String(selectedValue))
+
+    const filteredGroupedPatients = React.useMemo(() => {
+        if (!searchTerm.trim()) return patientsByPsychologist
+        const query = searchTerm.toLowerCase()
+        return patientsByPsychologist
+            .map((group) => {
+                const matches = group.patients.filter((p: any) =>
+                    p.name?.toLowerCase().includes(query) ||
+                    p.patientCode?.toLowerCase().includes(query)
+                )
+                return { ...group, patients: matches }
+            })
+            .filter((group) => group.patients.length > 0)
+    }, [patientsByPsychologist, searchTerm])
+
+    const totalMatches = filteredGroupedPatients.reduce((acc, curr) => acc + curr.patients.length, 0)
+
+    return (
+        <div ref={containerRef} className="relative w-full">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex items-center justify-between w-full h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm text-left focus:outline-none focus:ring-2 focus:ring-calm-teal/20 transition-all"
+            >
+                <span className={selectedPatient ? "text-neutral-charcoal font-medium" : "text-muted-foreground"}>
+                    {selectedPatient ? selectedPatient.patientCode : placeholder}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? "transform rotate-180" : ""}`} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute left-0 right-0 mt-1 bg-white border border-soft-gray rounded-xl shadow-lg z-50 overflow-hidden max-h-[300px] flex flex-col">
+                    <div className="p-2 border-b border-soft-gray bg-gray-50/50">
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Buscar paciente..."
+                            className="w-full h-8 px-2.5 rounded-lg border border-soft-gray text-xs bg-white focus:outline-none focus:ring-1 focus:ring-calm-teal"
+                            autoFocus
+                        />
+                    </div>
+                    <div className="overflow-y-auto flex-1 p-1">
+                        {totalMatches === 0 ? (
+                            <div className="py-4 text-center text-xs text-muted-foreground">
+                                No se encontraron pacientes
+                            </div>
+                        ) : (
+                            filteredGroupedPatients.map((group) => (
+                                <div key={group.id} className="mb-2 last:mb-0">
+                                    <div className="px-2.5 py-1 text-[10px] font-bold text-calm-teal uppercase tracking-wider bg-calm-teal/5 border-l-2 border-calm-teal rounded-r-md mt-1 mb-1">
+                                        {group.name}
+                                    </div>
+                                    <div className="mt-1 space-y-0.5">
+                                        {group.patients.map((p: any) => {
+                                            const isSelected = String(p.id) === String(selectedValue)
+                                            return (
+                                                <button
+                                                    key={p.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        onChange(p.id)
+                                                        setIsOpen(false)
+                                                        setSearchTerm("")
+                                                    }}
+                                                    className={`w-full flex items-center justify-end px-2.5 py-1.5 rounded-lg text-xs transition-colors ${isSelected
+                                                            ? "bg-calm-teal text-white font-medium"
+                                                            : "text-neutral-charcoal hover:bg-gray-50"
+                                                        }`}
+                                                >
+                                                    <span>{p.patientCode}</span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
+
+// Custom Select Component for aesthetic consistency
+interface CustomSelectOption {
+    value: string
+    label: string
+}
+
+interface CustomSelectProps {
+    options: CustomSelectOption[]
+    selectedValue: string
+    onChange: (value: string) => void
+    placeholder: string
+    className?: string
+}
+
+function CustomSelect({
+    options,
+    selectedValue,
+    onChange,
+    placeholder,
+    className
+}: CustomSelectProps) {
+    const [isOpen, setIsOpen] = useState(false)
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false)
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside)
+        return () => document.removeEventListener("mousedown", handleClickOutside)
+    }, [])
+
+    const selectedOption = options.find(o => String(o.value) === String(selectedValue))
+
+    return (
+        <div ref={containerRef} className={`relative w-full ${className || ""}`}>
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex items-center justify-between w-full h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm text-left focus:outline-none focus:ring-2 focus:ring-calm-teal/20 transition-all"
+            >
+                <span className={selectedOption ? "text-neutral-charcoal font-medium" : "text-muted-foreground"}>
+                    {selectedOption ? selectedOption.label : placeholder}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? "transform rotate-180" : ""}`} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute left-0 right-0 mt-1 bg-white border border-soft-gray rounded-xl shadow-lg z-50 overflow-hidden max-h-[200px] overflow-y-auto p-1">
+                    <div className="space-y-0.5">
+                        {options.map((opt) => {
+                            const isSelected = String(opt.value) === String(selectedValue)
+                            return (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                        onChange(opt.value)
+                                        setIsOpen(false)
+                                    }}
+                                    className={`w-full flex items-center px-2.5 py-1.5 rounded-lg text-xs transition-colors ${isSelected
+                                            ? "bg-calm-teal text-white font-medium"
+                                            : "text-neutral-charcoal hover:bg-gray-50"
+                                        }`}
+                                >
+                                    <span>{opt.label}</span>
+                                </button>
+                            )
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}
 
 export default function QuestionnairePage() {
     const router = useRouter()
@@ -174,11 +371,6 @@ export default function QuestionnairePage() {
 
     const [selectedIcon, setSelectedIcon] = useState("FileQuestion")
 
-    // AI Questionnaire Generator State
-    const [aiPrompt, setAiPrompt] = useState("")
-    const [isGenerating, setIsGenerating] = useState(false)
-    const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
-
     // Form State (Assignment)
     const [selectedPatient, setSelectedPatient] = useState("")
     const [selectedQuestionnaire, setSelectedQuestionnaire] = useState("")
@@ -204,23 +396,26 @@ export default function QuestionnairePage() {
 
     const fetchData = async () => {
         const userId = localStorage.getItem("userId")
+        const userRole = localStorage.getItem("userRole")
+        const filterId = userRole === "admin" ? undefined : (userId || undefined)
         const [q, a, p] = await Promise.all([
             api.getQuestionnaires(),
             api.getAssignments(),
-            api.getPatients(userId || undefined)
+            api.getPatients(filterId)
         ])
         setQuestionnaires(q)
 
-        const validPatientIds = new Set(p.map((patient: any) => patient.id))
+        const nonIAPatients = p.filter((patient: any) => !patient.is_ia_patient)
+        const validPatientIds = new Set(nonIAPatients.map((patient: any) => patient.id))
         // @ts-ignore
         const allAssignments = a.sort((x: Assignment, y: Assignment) => Number(y.id) - Number(x.id))
         const filteredAssignments = allAssignments.filter((assignment: Assignment) => validPatientIds.has(assignment.patientId))
 
         setAssignments(filteredAssignments)
-        setPatients(p)
+        setPatients(nonIAPatients)
 
-        if (p.length > 0) {
-            const allCompletions = await Promise.all(p.map((patient: any) => api.getQuestionnaireCompletions(patient.id)))
+        if (nonIAPatients.length > 0) {
+            const allCompletions = await Promise.all(nonIAPatients.map((patient: any) => api.getQuestionnaireCompletions(patient.id)))
             // Sort by scheduledAt if available, else completedAt
             setCompletions(allCompletions.flat().sort((a, b) => {
                 const dateA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : (a.completedAt ? new Date(a.completedAt).getTime() : 0)
@@ -241,33 +436,6 @@ export default function QuestionnairePage() {
         setNewQuestionText("")
         setNewQuestionType("likert")
         resetQuestionConfig()
-    }
-
-    const handleGenerateWithAi = async () => {
-        if (!aiPrompt.trim()) return
-        setIsGenerating(true)
-        try {
-            const result = await api.generateQuestionnaireWithAI(aiPrompt)
-            if (result) {
-                setTitle(result.title)
-                setSelectedIcon(result.icon || "FileQuestion")
-                setQuestions(result.questions)
-                setAiPrompt("")
-            } else {
-                alert("No se pudo generar el cuestionario con IA.")
-            }
-        } catch (e) {
-            console.error(e)
-            alert("Error al conectar con la IA.")
-        } finally {
-            setIsGenerating(false)
-        }
-    }
-
-    const handleSaveEditedQuestion = () => {
-        if (!editingQuestion) return
-        setQuestions(questions.map(q => q.id === editingQuestion.id ? editingQuestion : q))
-        setEditingQuestion(null)
     }
 
     const resetQuestionConfig = () => {
@@ -450,11 +618,47 @@ export default function QuestionnairePage() {
 
     // Helpers
     const getPatientName = (id: string) => patients.find((p: any) => p.id === id)?.patientCode || t("unknownPatient")
+    const getPatientPsychologistName = (id: string) => patients.find((p: any) => p.id === id)?.psychologistName || "Sin psicólogo"
     const getQuestionnaireTitle = (id: string) => questionnaires.find(q => q.id === id)?.title || id
     const getQuestionnaireIcon = (id: string) => {
         const q = questionnaires.find(q => q.id === id)
         return AVAILABLE_ICONS.find(i => i.name === q?.icon)?.icon || FileQuestion
     }
+
+    const patientsByPsychologist = React.useMemo(() => {
+        const groupedMap = new Map<number | string, { name: string; patients: any[] }>()
+        patients.forEach((p: any) => {
+            const psychId = p.psychologistId || "none"
+            const psychName = p.psychologistName || "Sin psicólogo"
+            if (!groupedMap.has(psychId)) {
+                groupedMap.set(psychId, { name: psychName, patients: [] })
+            }
+            groupedMap.get(psychId)!.patients.push(p)
+        })
+        return Array.from(groupedMap.entries()).map(([id, val]) => ({
+            id,
+            name: val.name,
+            patients: val.patients
+        }))
+    }, [patients])
+
+    const assignmentsByPsychologist = React.useMemo(() => {
+        const groupedMap = new Map<number | string, { name: string; assignments: Assignment[] }>()
+        assignments.filter(a => a.status !== 'completed').forEach((a) => {
+            const patient = patients.find(p => p.id === a.patientId)
+            const psychId = patient?.psychologistId || "none"
+            const psychName = patient?.psychologistName || "Sin psicólogo"
+            if (!groupedMap.has(psychId)) {
+                groupedMap.set(psychId, { name: psychName, assignments: [] })
+            }
+            groupedMap.get(psychId)!.assignments.push(a)
+        })
+        return Array.from(groupedMap.entries()).map(([id, val]) => ({
+            id,
+            name: val.name,
+            assignments: val.assignments
+        }))
+    }, [assignments, patients])
 
     if (!isAuthenticated) return null
 
@@ -470,54 +674,6 @@ export default function QuestionnairePage() {
                             {editingId ? t("editQuestionnaire") : t("createQuestionnaire")}
                         </h1>
                     </div>
-
-                    {!editingId && (
-                        <Card className="rounded-2xl border border-calm-teal/20 bg-calm-teal/5 shadow-soft">
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-base font-semibold text-calm-teal flex items-center gap-2">
-                                    <Sparkles className="h-5 w-5" />
-                                    Crear cuestionario con Inteligencia Artificial
-                                </CardTitle>
-                                <CardDescription>
-                                    Escribe un prompt que describa el tema o propósito de tu cuestionario (ej. "Cuestionario de 5 preguntas sobre la calidad del sueño y hábitos nocturnos") y la IA generará el título, ícono y preguntas correspondientes.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="pb-6">
-                                <div className="flex gap-2">
-                                    <Input
-                                        value={aiPrompt}
-                                        onChange={(e) => setAiPrompt(e.target.value)}
-                                        placeholder="Ej. Nivel de ansiedad y estrés académico..."
-                                        disabled={isGenerating}
-                                        className="rounded-xl border-soft-gray bg-white h-11"
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                handleGenerateWithAi();
-                                            }
-                                        }}
-                                    />
-                                    <Button
-                                        onClick={handleGenerateWithAi}
-                                        disabled={isGenerating || !aiPrompt.trim()}
-                                        className="bg-calm-teal text-white hover:bg-calm-teal/90 rounded-xl px-6 h-11 shrink-0 flex items-center gap-2"
-                                    >
-                                        {isGenerating ? (
-                                            <>
-                                                <Loader2 className="h-4 w-4 animate-spin" />
-                                                <span>Generando...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Sparkles className="h-4 w-4" />
-                                                <span>Generar</span>
-                                            </>
-                                        )}
-                                    </Button>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
                     <Card className="rounded-2xl border-soft-gray shadow-soft">
                         <CardContent className="pt-6 space-y-4">
                             <div className="space-y-4">
@@ -571,14 +727,9 @@ export default function QuestionnairePage() {
                                             </p>
                                         )}
                                     </div>
-                                    <div className="flex gap-1 shrink-0">
-                                        <Button variant="ghost" size="sm" onClick={() => setEditingQuestion(q)} className="h-8 w-8 p-0 text-gray-600 hover:text-calm-teal hover:bg-calm-teal/10 rounded-lg">
-                                            <Edit className="h-4 w-4" />
-                                        </Button>
-                                        <Button variant="ghost" size="sm" onClick={() => handleDeleteQuestion(q.id)} className="h-8 w-8 p-0 text-soft-coral hover:bg-soft-coral/10 rounded-lg">
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
+                                    <Button variant="ghost" size="sm" onClick={() => handleDeleteQuestion(q.id)} className="h-8 w-8 p-0 text-soft-coral hover:bg-soft-coral/10 rounded-lg shrink-0">
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
                                 </CardContent>
                             </Card>
                         ))}
@@ -592,11 +743,16 @@ export default function QuestionnairePage() {
                                     </div>
                                     <div className="space-y-2">
                                         <Label className="text-xs text-muted-foreground">{t("questionType")}</Label>
-                                        <select value={newQuestionType} onChange={(e) => setNewQuestionType(e.target.value as QuestionType)} className="w-full h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm focus:outline-none focus:ring-2 focus:ring-calm-teal/20">
-                                            <option value="likert">{t("likert")}</option>
-                                            <option value="frequency">{t("frequency")}</option>
-                                            <option value="openText">{t("openText")}</option>
-                                        </select>
+                                        <CustomSelect
+                                            options={[
+                                                { value: "likert", label: t("likert") },
+                                                { value: "frequency", label: t("frequency") },
+                                                { value: "openText", label: t("openText") }
+                                            ]}
+                                            selectedValue={newQuestionType}
+                                            onChange={(val) => setNewQuestionType(val as QuestionType)}
+                                            placeholder={`-- ${t("questionType")} --`}
+                                        />
                                     </div>
                                 </div>
                                 {newQuestionType === 'likert' && (
@@ -640,116 +796,6 @@ export default function QuestionnairePage() {
                             {t("saveQuestionnaire")}
                         </Button>
                     </div>
-
-                    <Dialog open={editingQuestion !== null} onOpenChange={(open) => { if (!open) setEditingQuestion(null) }}>
-                        <DialogContent className="sm:max-w-[500px] rounded-2xl bg-white">
-                            <DialogHeader>
-                                <DialogTitle className="flex items-center gap-2 text-neutral-charcoal text-lg font-bold">
-                                    <Edit className="h-5 w-5 text-calm-teal" />
-                                    Editar Pregunta
-                                </DialogTitle>
-                                <DialogDescription className="text-sm text-muted-foreground">
-                                    Modifica el texto o la configuración de esta pregunta.
-                                </DialogDescription>
-                            </DialogHeader>
-                            {editingQuestion && (
-                                <div className="space-y-4 py-4">
-                                    <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-neutral-charcoal">Texto de la pregunta</Label>
-                                        <Input
-                                            value={editingQuestion.text}
-                                            onChange={(e) => setEditingQuestion({ ...editingQuestion, text: e.target.value })}
-                                            className="rounded-xl border-soft-gray"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label className="text-sm font-medium text-neutral-charcoal">Tipo de pregunta</Label>
-                                        <select
-                                            value={editingQuestion.type}
-                                            onChange={(e) => {
-                                                const newType = e.target.value as QuestionType;
-                                                const updated: Question = { ...editingQuestion, type: newType };
-                                                if (newType === 'likert') {
-                                                    updated.min = editingQuestion.min ?? 1;
-                                                    updated.max = editingQuestion.max ?? 10;
-                                                    updated.minLabel = editingQuestion.minLabel ?? "Nada";
-                                                    updated.maxLabel = editingQuestion.maxLabel ?? "Mucho";
-                                                } else if (newType === 'frequency') {
-                                                    updated.options = editingQuestion.options ?? ["Nunca", "A veces", "Siempre"];
-                                                }
-                                                setEditingQuestion(updated);
-                                            }}
-                                            className="w-full h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm focus:outline-none focus:ring-2 focus:ring-calm-teal/20"
-                                        >
-                                            <option value="likert">Escala Likert</option>
-                                            <option value="frequency">Frecuencia</option>
-                                            <option value="openText">Pregunta abierta</option>
-                                        </select>
-                                    </div>
-                                    {editingQuestion.type === 'likert' && (
-                                        <div className="grid grid-cols-2 gap-4 p-4 bg-muted/30 rounded-xl">
-                                            <div className="space-y-2">
-                                                <Label className="text-xs text-muted-foreground">Mínimo</Label>
-                                                <Input
-                                                    type="number"
-                                                    value={editingQuestion.min ?? 1}
-                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, min: Number(e.target.value) })}
-                                                    className="h-8 bg-white"
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label className="text-xs text-muted-foreground">Máximo</Label>
-                                                <Input
-                                                    type="number"
-                                                    value={editingQuestion.max ?? 10}
-                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, max: Number(e.target.value) })}
-                                                    className="h-8 bg-white"
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label className="text-xs text-muted-foreground">Etiqueta Mín</Label>
-                                                <Input
-                                                    value={editingQuestion.minLabel ?? ""}
-                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, minLabel: e.target.value })}
-                                                    className="h-8 bg-white"
-                                                />
-                                            </div>
-                                            <div className="space-y-2">
-                                                <Label className="text-xs text-muted-foreground">Etiqueta Máx</Label>
-                                                <Input
-                                                    value={editingQuestion.maxLabel ?? ""}
-                                                    onChange={(e) => setEditingQuestion({ ...editingQuestion, maxLabel: e.target.value })}
-                                                    className="h-8 bg-white"
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-                                    {editingQuestion.type === 'frequency' && (
-                                        <div className="space-y-2 p-4 bg-muted/30 rounded-xl">
-                                            <Label className="text-xs text-muted-foreground">Opciones (separadas por coma)</Label>
-                                            <Input
-                                                value={(editingQuestion.options ?? []).join(", ")}
-                                                onChange={(e) => setEditingQuestion({ ...editingQuestion, options: e.target.value.split(',').map(o => o.trim()).filter(Boolean) })}
-                                                className="h-9 bg-white"
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                            <DialogFooter className="flex gap-2">
-                                <Button variant="ghost" onClick={() => setEditingQuestion(null)} className="rounded-xl">
-                                    Cancelar
-                                </Button>
-                                <Button
-                                    onClick={handleSaveEditedQuestion}
-                                    disabled={!editingQuestion?.text.trim()}
-                                    className="bg-calm-teal text-white hover:bg-calm-teal/90 rounded-xl px-6"
-                                >
-                                    Guardar Cambios
-                                </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
                 </div>
             </DashboardLayout>
         )
@@ -917,480 +963,488 @@ export default function QuestionnairePage() {
                                                 </td>
                                             </tr>
                                         ) : (
-                                            assignments.filter(a => a.status !== 'completed').map((a) => {
-                                                const assignmentCompletions = completions.filter(c => c.assignmentId === a.id)
-                                                const totalScheduled = assignmentCompletions.length
-                                                const completedCount = assignmentCompletions.filter(c => c.status === 'completed').length
-                                                const isAssignmentRecurrent = a.startDate !== a.endDate || a.frequencyCount > 1
-                                                const singleCompletion = assignmentCompletions[0]
-                                                const isExpanded = expandedAssignmentId === a.id
+                                            assignmentsByPsychologist.map((group) => (
+                                                <React.Fragment key={group.id}>
+                                                    {/* Therapist Group Header Row */}
+                                                    <tr className="bg-gray-100/60 font-semibold border-y border-gray-200">
+                                                        <td colSpan={6} className="px-6 py-2.5 text-xs text-neutral-charcoal uppercase tracking-wider">
+                                                            Terapeuta: {group.name}
+                                                        </td>
+                                                    </tr>
+                                                    {group.assignments.map((a) => {
+                                                        const assignmentCompletions = completions.filter(c => c.assignmentId === a.id)
+                                                        const totalScheduled = assignmentCompletions.length
+                                                        const completedCount = assignmentCompletions.filter(c => c.status === 'completed').length
+                                                        const isAssignmentRecurrent = a.startDate !== a.endDate || a.frequencyCount > 1
+                                                        const singleCompletion = assignmentCompletions[0]
+                                                        const isExpanded = expandedAssignmentId === a.id
 
-                                                return (
-                                                    <React.Fragment key={a.id}>
-                                                        <tr className={`group hover:bg-gray-50/50 transition-colors ${isExpanded ? 'bg-gray-50/30' : ''}`}>
-                                                            <td className="px-6 py-4">
-                                                                <div className="flex items-center gap-3">
-                                                                    <span className="font-semibold text-neutral-charcoal">{getPatientName(a.patientId)}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="flex items-center gap-2">
-                                                                    {(() => {
-                                                                        const Icon = getQuestionnaireIcon(a.questionnaireId)
-                                                                        return <Icon className="h-4 w-4 text-calm-teal" />
-                                                                    })()}
-                                                                    <span className="text-neutral-charcoal">{getQuestionnaireTitle(a.questionnaireId)}</span>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <Calendar className="h-3.5 w-3.5" />
-                                                                        <span>
-                                                                            {a.startDate === a.endDate ?
-                                                                                new Date(a.startDate).toLocaleDateString() :
-                                                                                `${new Date(a.startDate).toLocaleDateString()} - ${new Date(a.endDate).toLocaleDateString()}`
-                                                                            }
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <Clock className="h-3.5 w-3.5" />
-                                                                        <span>
-                                                                            {a.startDate === a.endDate ? "Una vez" : `${a.frequencyCount}x/${t(a.frequencyType === 'weekly' ? 'sem' : 'dia')}`}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                {isAssignmentRecurrent ? (
-                                                                    <div className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${a.status === 'active'
-                                                                        ? 'bg-green-50 text-green-700 border-green-200'
-                                                                        : 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                                                        }`}>
-                                                                        <span className={`w-1.5 h-1.5 rounded-full mr-1.5 self-center ${a.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
-                                                                        {t(a.status)}
-                                                                    </div>
-                                                                ) : (
-                                                                    singleCompletion && (
-                                                                        <div className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${singleCompletion.status === 'completed' ? 'bg-green-50 text-green-700 border-green-200' :
-                                                                            singleCompletion.status === 'missed' ? 'bg-red-50 text-red-700 border-red-200' :
-                                                                                singleCompletion.status === 'sent' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                                                                    'bg-gray-100 text-gray-600 border-gray-200'
-                                                                            }`}>
-                                                                            {t(singleCompletion.status) || singleCompletion.status}
+                                                        return (
+                                                            <React.Fragment key={a.id}>
+                                                                <tr className={`group hover:bg-gray-50/50 transition-colors ${isExpanded ? 'bg-gray-50/30' : ''}`}>
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <span className="font-semibold text-neutral-charcoal">{getPatientName(a.patientId)}</span>
                                                                         </div>
-                                                                    )
-                                                                )}
-                                                            </td>
-                                                            <td className="px-6 py-4">
-                                                                {isAssignmentRecurrent ? (
-                                                                    <div className="w-full max-w-[140px]">
-                                                                        <div className="flex justify-between text-[10px] font-medium text-muted-foreground mb-1">
-                                                                            <span>{Math.round((completedCount / (totalScheduled || 1)) * 100)}%</span>
-                                                                            <span>{completedCount}/{totalScheduled}</span>
+                                                                    </td>
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex items-center gap-2">
+                                                                            {(() => {
+                                                                                const Icon = getQuestionnaireIcon(a.questionnaireId)
+                                                                                return <Icon className="h-4 w-4 text-calm-teal" />
+                                                                            })()}
+                                                                            <span className="text-neutral-charcoal">{getQuestionnaireTitle(a.questionnaireId)}</span>
                                                                         </div>
-                                                                        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                                                                            <div
-                                                                                className="h-full bg-calm-teal rounded-full transition-all duration-500"
-                                                                                style={{ width: `${(completedCount / (totalScheduled || 1)) * 100}%` }}
-                                                                            />
+                                                                    </td>
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <Calendar className="h-3.5 w-3.5" />
+                                                                                <span>
+                                                                                    {a.startDate === a.endDate ?
+                                                                                        new Date(a.startDate).toLocaleDateString() :
+                                                                                        `${new Date(a.startDate).toLocaleDateString()} - ${new Date(a.endDate).toLocaleDateString()}`
+                                                                                    }
+                                                                                </span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <Clock className="h-3.5 w-3.5" />
+                                                                                <span>
+                                                                                    {a.startDate === a.endDate ? "Una vez" : `${a.frequencyCount}x/${t(a.frequencyType === 'weekly' ? 'sem' : 'dia')}`}
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    singleCompletion && (
-                                                                        <div className="flex flex-col gap-1">
-                                                                            {editingCompletionId === singleCompletion.id ? (
-                                                                                <div className="flex items-center gap-1">
-                                                                                    <Input
-                                                                                        type="datetime-local"
-                                                                                        className="h-7 w-[150px] text-xs px-1"
-                                                                                        value={`${editDate}T${editTime}`}
-                                                                                        onChange={(e) => {
-                                                                                            const val = e.target.value
-                                                                                            if (val) {
-                                                                                                const [d, t] = val.split("T")
-                                                                                                setEditDate(d)
-                                                                                                setEditTime(t)
-                                                                                            }
-                                                                                        }}
-                                                                                        onClick={(e) => e.stopPropagation()}
-                                                                                    />
-                                                                                    <Button size="icon" className="h-7 w-7 bg-calm-teal text-white" onClick={(e) => {
-                                                                                        e.stopPropagation()
-                                                                                        if (singleCompletion.id && editDate && editTime) {
-                                                                                            const localDate = new Date(`${editDate}T${editTime}`)
-                                                                                            api.updateQuestionnaireCompletion(singleCompletion.id, { scheduledAt: localDate.toISOString() })
-                                                                                                .then(() => { fetchData(); setEditingCompletionId(null) })
-                                                                                        }
-                                                                                    }}>
-                                                                                        <Save className="h-3.5 w-3.5" />
-                                                                                    </Button>
-                                                                                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => {
-                                                                                        e.stopPropagation()
-                                                                                        setEditingCompletionId(null)
-                                                                                    }}>
-                                                                                        <X className="h-3.5 w-3.5" />
-                                                                                    </Button>
+                                                                    </td>
+                                                                    <td className="px-6 py-4">
+                                                                        {isAssignmentRecurrent ? (
+                                                                            <div className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${a.status === 'active'
+                                                                                ? 'bg-green-50 text-green-700 border-green-200'
+                                                                                : 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                                                                                }`}>
+                                                                                <span className={`w-1.5 h-1.5 rounded-full mr-1.5 self-center ${a.status === 'active' ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
+                                                                                {t(a.status)}
+                                                                            </div>
+                                                                        ) : (
+                                                                            singleCompletion && (
+                                                                                <div className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold uppercase border ${singleCompletion.status === 'completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                                                    singleCompletion.status === 'missed' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                                                        singleCompletion.status === 'sent' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                                                            'bg-gray-100 text-gray-600 border-gray-200'
+                                                                                    }`}>
+                                                                                    {t(singleCompletion.status) || singleCompletion.status}
                                                                                 </div>
-                                                                            ) : (
-                                                                                <>
-                                                                                    {singleCompletion.status === 'pending' && singleCompletion.scheduledAt && (() => {
-                                                                                        const now = new Date()
-                                                                                        const scheduled = getSafeDate(singleCompletion.scheduledAt)
-                                                                                        const diffMs = scheduled.getTime() - now.getTime()
+                                                                            )
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-6 py-4">
+                                                                        {isAssignmentRecurrent ? (
+                                                                            <div className="w-full max-w-[140px]">
+                                                                                <div className="flex justify-between text-[10px] font-medium text-muted-foreground mb-1">
+                                                                                    <span>{Math.round((completedCount / (totalScheduled || 1)) * 100)}%</span>
+                                                                                    <span>{completedCount}/{totalScheduled}</span>
+                                                                                </div>
+                                                                                <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                                                                    <div
+                                                                                        className="h-full bg-calm-teal rounded-full transition-all duration-500"
+                                                                                        style={{ width: `${(completedCount / (totalScheduled || 1)) * 100}%` }}
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        ) : (
+                                                                            singleCompletion && (
+                                                                                <div className="flex flex-col gap-1">
+                                                                                    {editingCompletionId === singleCompletion.id ? (
+                                                                                        <div className="flex items-center gap-1">
+                                                                                            <Input
+                                                                                                type="datetime-local"
+                                                                                                className="h-7 w-[150px] text-xs px-1"
+                                                                                                value={`${editDate}T${editTime}`}
+                                                                                                onChange={(e) => {
+                                                                                                    const val = e.target.value
+                                                                                                    if (val) {
+                                                                                                        const [d, t] = val.split("T")
+                                                                                                        setEditDate(d)
+                                                                                                        setEditTime(t)
+                                                                                                    }
+                                                                                                }}
+                                                                                                onClick={(e) => e.stopPropagation()}
+                                                                                            />
+                                                                                            <Button size="icon" className="h-7 w-7 bg-calm-teal text-white" onClick={(e) => {
+                                                                                                e.stopPropagation()
+                                                                                                if (singleCompletion.id && editDate && editTime) {
+                                                                                                    const localDate = new Date(`${editDate}T${editTime}`)
+                                                                                                    api.updateQuestionnaireCompletion(singleCompletion.id, { scheduledAt: localDate.toISOString() })
+                                                                                                        .then(() => { fetchData(); setEditingCompletionId(null) })
+                                                                                                }
+                                                                                            }}>
+                                                                                                <Save className="h-3.5 w-3.5" />
+                                                                                            </Button>
+                                                                                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={(e) => {
+                                                                                                e.stopPropagation()
+                                                                                                setEditingCompletionId(null)
+                                                                                            }}>
+                                                                                                <X className="h-3.5 w-3.5" />
+                                                                                            </Button>
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <>
+                                                                                            {singleCompletion.status === 'pending' && singleCompletion.scheduledAt && (() => {
+                                                                                                const now = new Date()
+                                                                                                const scheduled = getSafeDate(singleCompletion.scheduledAt)
+                                                                                                const diffMs = scheduled.getTime() - now.getTime()
 
-                                                                                        if (diffMs < 0) {
-                                                                                            return (
-                                                                                                <div className="flex flex-col">
-                                                                                                    <span className="text-xs font-semibold text-neutral-charcoal">
-                                                                                                        {scheduled.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                                                    </span>
-                                                                                                    <span className="text-[10px] text-red-600 font-medium">
-                                                                                                        Vencido
-                                                                                                    </span>
-                                                                                                </div>
-                                                                                            )
-                                                                                        }
-
-                                                                                        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-                                                                                        const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-                                                                                        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
-
-                                                                                        let timeRemaining = ""
-                                                                                        if (days > 0) {
-                                                                                            timeRemaining = `${days}d ${hours}h`
-                                                                                        } else if (hours > 0) {
-                                                                                            timeRemaining = `${hours}h ${minutes}m`
-                                                                                        } else {
-                                                                                            timeRemaining = `${minutes}m`
-                                                                                        }
-
-                                                                                        return (
-                                                                                            <div className="flex items-center gap-1 group/time">
-                                                                                                <div className="flex flex-col">
-                                                                                                    <span className="text-xs font-semibold text-neutral-charcoal">
-                                                                                                        {scheduled.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                                                    </span>
-                                                                                                    <div className="flex items-center gap-1">
-                                                                                                        <Clock className="h-3 w-3 text-calm-teal" />
-                                                                                                        <span className="text-[10px] text-calm-teal font-medium">
-                                                                                                            {timeRemaining}
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                </div>
-                                                                                                <Button
-                                                                                                    size="icon"
-                                                                                                    variant="ghost"
-                                                                                                    className="h-5 w-5 p-0 text-muted-foreground opacity-0 group-hover/time:opacity-100 transition-opacity"
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation()
-                                                                                                        setEditingCompletionId(singleCompletion.id)
-                                                                                                        if (singleCompletion.scheduledAt) {
-                                                                                                            const d = getSafeDate(singleCompletion.scheduledAt)
-                                                                                                            const year = d.getFullYear()
-                                                                                                            const month = String(d.getMonth() + 1).padStart(2, '0')
-                                                                                                            const day = String(d.getDate()).padStart(2, '0')
-                                                                                                            const hours = String(d.getHours()).padStart(2, '0')
-                                                                                                            const minutes = String(d.getMinutes()).padStart(2, '0')
-                                                                                                            setEditDate(`${year}-${month}-${day}`)
-                                                                                                            setEditTime(`${hours}:${minutes}`)
-                                                                                                        }
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <Edit className="h-3 w-3" />
-                                                                                                </Button>
-                                                                                            </div>
-                                                                                        )
-                                                                                    })()}
-
-                                                                                    {singleCompletion.status === 'sent' && singleCompletion.scheduledAt && (() => {
-                                                                                        const scheduled = getSafeDate(singleCompletion.scheduledAt)
-                                                                                        return (
-                                                                                            <div className="flex flex-col">
-                                                                                                <div className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
-                                                                                                    <Calendar className="h-3.5 w-3.5 text-blue-500" />
-                                                                                                    <span>{scheduled.toLocaleDateString()}</span>
-                                                                                                </div>
-                                                                                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                                                                    <Clock className="h-3.5 w-3.5 text-gray-400" />
-                                                                                                    <span>{scheduled.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        )
-                                                                                    })()}
-                                                                                </>
-                                                                            )}
-                                                                        </div>
-                                                                    )
-                                                                )}
-                                                            </td>
-                                                            <td className="px-6 py-4 text-right">
-                                                                <div className="flex justify-end items-center gap-2">
-                                                                    {isAssignmentRecurrent && (
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            onClick={() => setExpandedAssignmentId(isExpanded ? null : a.id)}
-                                                                            className={`h-8 w-8 p-0 rounded-full transition-colors mr-1 ${isExpanded ? 'bg-calm-teal text-white hover:bg-calm-teal/90' : 'text-gray-400 hover:text-calm-teal hover:bg-calm-teal/10'}`}
-                                                                        >
-                                                                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                                                        </Button>
-                                                                    )}
-
-                                                                    <DropdownMenu>
-                                                                        <DropdownMenuTrigger asChild>
-                                                                            <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-neutral-charcoal hover:bg-gray-100 rounded-full">
-                                                                                <span className="sr-only">Open menu</span>
-                                                                                <MoreHorizontal className="h-4 w-4" />
-                                                                            </Button>
-                                                                        </DropdownMenuTrigger>
-                                                                        <DropdownMenuContent align="end" className="w-[160px] rounded-xl shadow-lg border-gray-100">
-                                                                            <DropdownMenuLabel className="text-xs text-muted-foreground">{t("actions")}</DropdownMenuLabel>
-
-                                                                            {a.status !== 'completed' && isAssignmentRecurrent && (
-                                                                                <>
-                                                                                    <DropdownMenuItem onClick={() => handleToggleStatus(a.id)} className="cursor-pointer">
-                                                                                        {a.status === 'active' ? (
-                                                                                            <>
-                                                                                                <Pause className="mr-2 h-4 w-4 text-gray-500" />
-                                                                                                <span>{t("pause")}</span>
-                                                                                            </>
-                                                                                        ) : (
-                                                                                            <>
-                                                                                                <Play className="mr-2 h-4 w-4 text-gray-500" />
-                                                                                                <span>{t("resume")}</span>
-                                                                                            </>
-                                                                                        )}
-                                                                                    </DropdownMenuItem>
-                                                                                    <DropdownMenuItem onClick={async () => {
-                                                                                        if (confirm(t("confirmComplete"))) {
-                                                                                            await api.updateAssignmentStatus(a.id, "completed")
-                                                                                            fetchData()
-                                                                                        }
-                                                                                    }} className="cursor-pointer">
-                                                                                        <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
-                                                                                        <span>{t("completed")}</span>
-                                                                                    </DropdownMenuItem>
-                                                                                    <DropdownMenuSeparator />
-                                                                                </>
-                                                                            )}
-
-                                                                            <DropdownMenuItem onClick={() => handleDeleteAssignment(a.id)} className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer">
-                                                                                <Trash2 className="mr-2 h-4 w-4" />
-                                                                                <span>{t("delete")}</span>
-                                                                            </DropdownMenuItem>
-                                                                        </DropdownMenuContent>
-                                                                    </DropdownMenu>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                        {isExpanded && (() => {
-
-                                                            // Helper function to get week number and year
-                                                            const getWeekInfo = (date: Date) => {
-                                                                const firstDayOfYear = new Date(date.getFullYear(), 0, 1)
-                                                                const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000
-                                                                const weekNumber = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7)
-                                                                return { week: weekNumber, year: date.getFullYear() }
-                                                            }
-
-                                                            // Group completions by week
-                                                            const sortedCompletions = assignmentCompletions.sort((x, y) => {
-                                                                const tA = x.scheduledAt ? getSafeDate(x.scheduledAt).getTime() : 0
-                                                                const tB = y.scheduledAt ? getSafeDate(y.scheduledAt).getTime() : 0
-                                                                return tA - tB
-                                                            })
-
-                                                            const completionsByWeek: { [key: string]: typeof assignmentCompletions } = {}
-                                                            sortedCompletions.forEach((c) => {
-                                                                if (c.scheduledAt) {
-                                                                    const date = getSafeDate(c.scheduledAt)
-                                                                    const { week, year } = getWeekInfo(date)
-                                                                    const key = `${year}-W${week}`
-                                                                    if (!completionsByWeek[key]) {
-                                                                        completionsByWeek[key] = []
-                                                                    }
-                                                                    completionsByWeek[key].push(c)
-                                                                }
-                                                            })
-
-                                                            return (
-                                                                <tr className="bg-gray-50/30 animate-in fade-in zoom-in-95 duration-200">
-                                                                    <td colSpan={6} className="px-6 py-4 border-t border-gray-100 border-b border-gray-200 shadow-inner">
-                                                                        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm w-full">
-                                                                            <table className="w-full text-sm">
-                                                                                <thead className="bg-gray-50 border-b border-gray-200">
-                                                                                    <tr>
-                                                                                        <th className="px-4 py-3 font-semibold text-gray-500 text-left">Fecha Programada</th>
-                                                                                        <th className="px-4 py-3 font-semibold text-gray-500 text-left">{t('status')}</th>
-                                                                                        <th className="px-4 py-3 font-semibold text-gray-500 text-left">Tiempo Restante</th>
-                                                                                        <th className="px-4 py-3 font-semibold text-gray-500 text-right">Acciones</th>
-                                                                                    </tr>
-                                                                                </thead>
-                                                                                <tbody>
-                                                                                    {Object.keys(completionsByWeek).map((weekKey) => {
-                                                                                        const [yearStr, weekStr] = weekKey.split('-W')
-                                                                                        const weekCompletions = completionsByWeek[weekKey]
-                                                                                        const firstDate = weekCompletions[0].scheduledAt ? new Date(weekCompletions[0].scheduledAt) : new Date()
-
-                                                                                        // Calculate week start and end dates
-                                                                                        const startOfWeek = new Date(firstDate)
-                                                                                        startOfWeek.setDate(firstDate.getDate() - firstDate.getDay() + 1) // Monday
-                                                                                        const endOfWeek = new Date(startOfWeek)
-                                                                                        endOfWeek.setDate(startOfWeek.getDate() + 6) // Sunday
-
-                                                                                        return (
-                                                                                            <React.Fragment key={weekKey}>
-                                                                                                {/* Week Header */}
-                                                                                                <tr className="bg-calm-teal/5 border-t-2 border-calm-teal/20">
-                                                                                                    <td colSpan={4} className="px-4 py-2">
-                                                                                                        <div className="flex items-center gap-2">
-                                                                                                            <Calendar className="h-4 w-4 text-calm-teal" />
-                                                                                                            <span className="font-bold text-sm text-calm-teal">
-                                                                                                                Semana {weekStr} - {yearStr}
+                                                                                                if (diffMs < 0) {
+                                                                                                    return (
+                                                                                                        <div className="flex flex-col">
+                                                                                                            <span className="text-xs font-semibold text-neutral-charcoal">
+                                                                                                                {scheduled.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                                                                             </span>
-                                                                                                            <span className="text-xs text-gray-500">
-                                                                                                                ({startOfWeek.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} - {endOfWeek.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })})
+                                                                                                            <span className="text-[10px] text-red-600 font-medium">
+                                                                                                                Vencido
                                                                                                             </span>
                                                                                                         </div>
-                                                                                                    </td>
-                                                                                                </tr>
-                                                                                                {/* Completions for this week */}
-                                                                                                {weekCompletions.map((c) => (
-                                                                                                    <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                                                                                                        <td className="px-4 py-3 text-neutral-charcoal">
-                                                                                                            {c.scheduledAt ? (
-                                                                                                                <div className="flex flex-col gap-1">
-                                                                                                                    <div className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
-                                                                                                                        <Calendar className="h-3.5 w-3.5 text-calm-teal" />
-                                                                                                                        <span>{getSafeDate(c.scheduledAt).toLocaleDateString()}</span>
-                                                                                                                    </div>
-                                                                                                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                                                                                        <Clock className="h-3.5 w-3.5 text-gray-400" />
-                                                                                                                        <span>{getSafeDate(c.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                                                                                    </div>
-                                                                                                                </div>
-                                                                                                            ) : "—"}
-                                                                                                        </td>
-                                                                                                        <td className="px-4 py-3">
-                                                                                                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${c.status === 'completed' ? 'bg-green-50 text-green-700 border-green-200' :
-                                                                                                                c.status === 'missed' ? 'bg-red-50 text-red-700 border-red-200' :
-                                                                                                                    c.status === 'sent' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                                                                                                        'bg-gray-100 text-gray-600 border-gray-200'
-                                                                                                                }`}>
-                                                                                                                {t(c.status) || c.status}
+                                                                                                    )
+                                                                                                }
+
+                                                                                                const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+                                                                                                const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+                                                                                                const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+
+                                                                                                let timeRemaining = ""
+                                                                                                if (days > 0) {
+                                                                                                    timeRemaining = `${days}d ${hours}h`
+                                                                                                } else if (hours > 0) {
+                                                                                                    timeRemaining = `${hours}h ${minutes}m`
+                                                                                                } else {
+                                                                                                    timeRemaining = `${minutes}m`
+                                                                                                }
+
+                                                                                                return (
+                                                                                                    <div className="flex items-center gap-1 group/time">
+                                                                                                        <div className="flex flex-col">
+                                                                                                            <span className="text-xs font-semibold text-neutral-charcoal">
+                                                                                                                {scheduled.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                                                                             </span>
-                                                                                                            {c.isDelayed && (
-                                                                                                                <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                                                                                                    Fuera de plazo
+                                                                                                            <div className="flex items-center gap-1">
+                                                                                                                <Clock className="h-3 w-3 text-calm-teal" />
+                                                                                                                <span className="text-[10px] text-calm-teal font-medium">
+                                                                                                                    {timeRemaining}
                                                                                                                 </span>
-                                                                                                            )}
-                                                                                                        </td>
-                                                                                                        <td className="px-4 py-3">
-                                                                                                            {c.status === 'pending' && c.scheduledAt && (() => {
-                                                                                                                const now = new Date()
-                                                                                                                const scheduled = getSafeDate(c.scheduledAt)
-                                                                                                                const diffMs = scheduled.getTime() - now.getTime()
-
-                                                                                                                if (diffMs < 0) {
-                                                                                                                    return (
-                                                                                                                        <div className="flex items-center gap-1.5">
-                                                                                                                            <span className="text-xs text-red-600 font-medium">⏰ Vencido</span>
-                                                                                                                        </div>
-                                                                                                                    )
+                                                                                                            </div>
+                                                                                                        </div>
+                                                                                                        <Button
+                                                                                                            size="icon"
+                                                                                                            variant="ghost"
+                                                                                                            className="h-5 w-5 p-0 text-muted-foreground opacity-0 group-hover/time:opacity-100 transition-opacity"
+                                                                                                            onClick={(e) => {
+                                                                                                                e.stopPropagation()
+                                                                                                                setEditingCompletionId(singleCompletion.id)
+                                                                                                                if (singleCompletion.scheduledAt) {
+                                                                                                                    const d = getSafeDate(singleCompletion.scheduledAt)
+                                                                                                                    const year = d.getFullYear()
+                                                                                                                    const month = String(d.getMonth() + 1).padStart(2, '0')
+                                                                                                                    const day = String(d.getDate()).padStart(2, '0')
+                                                                                                                    const hours = String(d.getHours()).padStart(2, '0')
+                                                                                                                    const minutes = String(d.getMinutes()).padStart(2, '0')
+                                                                                                                    setEditDate(`${year}-${month}-${day}`)
+                                                                                                                    setEditTime(`${hours}:${minutes}`)
                                                                                                                 }
+                                                                                                            }}
+                                                                                                        >
+                                                                                                            <Edit className="h-3 w-3" />
+                                                                                                        </Button>
+                                                                                                    </div>
+                                                                                                )
+                                                                                            })()}
 
-                                                                                                                const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-                                                                                                                const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-                                                                                                                const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+                                                                                            {singleCompletion.status === 'sent' && singleCompletion.scheduledAt && (() => {
+                                                                                                const scheduled = getSafeDate(singleCompletion.scheduledAt)
+                                                                                                return (
+                                                                                                    <div className="flex flex-col">
+                                                                                                        <div className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                                                                                                            <Calendar className="h-3.5 w-3.5 text-blue-500" />
+                                                                                                            <span>{scheduled.toLocaleDateString()}</span>
+                                                                                                        </div>
+                                                                                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                                                                            <Clock className="h-3.5 w-3.5 text-gray-400" />
+                                                                                                            <span>{scheduled.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                )
+                                                                                            })()}
+                                                                                        </>
+                                                                                    )}
+                                                                                </div>
+                                                                            )
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-6 py-4 text-right">
+                                                                        <div className="flex justify-end items-center gap-2">
+                                                                            {isAssignmentRecurrent && (
+                                                                                <Button
+                                                                                    variant="ghost"
+                                                                                    size="sm"
+                                                                                    onClick={() => setExpandedAssignmentId(isExpanded ? null : a.id)}
+                                                                                    className={`h-8 w-8 p-0 rounded-full transition-colors mr-1 ${isExpanded ? 'bg-calm-teal text-white hover:bg-calm-teal/90' : 'text-gray-400 hover:text-calm-teal hover:bg-calm-teal/10'}`}
+                                                                                >
+                                                                                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                                                                </Button>
+                                                                            )}
 
-                                                                                                                let timeRemaining = ""
-                                                                                                                if (days > 0) {
-                                                                                                                    timeRemaining = `${days}d ${hours}h`
-                                                                                                                } else if (hours > 0) {
-                                                                                                                    timeRemaining = `${hours}h ${minutes}m`
-                                                                                                                } else {
-                                                                                                                    timeRemaining = `${minutes}m`
-                                                                                                                }
+                                                                            <DropdownMenu>
+                                                                                <DropdownMenuTrigger asChild>
+                                                                                    <Button variant="ghost" className="h-8 w-8 p-0 text-gray-400 hover:text-neutral-charcoal hover:bg-gray-100 rounded-full">
+                                                                                        <span className="sr-only">Open menu</span>
+                                                                                        <MoreHorizontal className="h-4 w-4" />
+                                                                                    </Button>
+                                                                                </DropdownMenuTrigger>
+                                                                                <DropdownMenuContent align="end" className="w-[160px] rounded-xl shadow-lg border-gray-100">
+                                                                                    <DropdownMenuLabel className="text-xs text-muted-foreground">{t("actions")}</DropdownMenuLabel>
 
-                                                                                                                return (
-                                                                                                                    <div className="flex items-center gap-1.5">
-                                                                                                                        <Clock className="h-4 w-4 text-calm-teal" />
-                                                                                                                        <span className="text-xs text-calm-teal font-medium">{timeRemaining}</span>
-                                                                                                                    </div>
-                                                                                                                )
-                                                                                                            })()}
-                                                                                                        </td>
-                                                                                                        <td className="px-4 py-3 text-right">
-                                                                                                            {/* Reuse edit logic here if needed, keeping it simple for now as requested */}
-                                                                                                            {editingCompletionId === c.id ? (
-                                                                                                                <div className="flex items-center justify-end gap-2">
-                                                                                                                    {/* Simplified Edit View for Recurrent Child */}
-                                                                                                                    <Input
-                                                                                                                        type="datetime-local" className="h-8 w-[180px] text-xs"
-                                                                                                                        value={`${editDate}T${editTime}`}
-                                                                                                                        onChange={(e) => { const val = e.target.value; if (val) { const [d, t] = val.split("T"); setEditDate(d); setEditTime(t); } }}
-                                                                                                                    />
-                                                                                                                    <Button size="icon" className="h-7 w-7 bg-calm-teal text-white" onClick={async () => {
-                                                                                                                        if (!c.id || !editDate || !editTime) return
-                                                                                                                        const localDate = new Date(`${editDate}T${editTime}`)
-                                                                                                                        await api.updateQuestionnaireCompletion(c.id, { scheduledAt: localDate.toISOString() })
-                                                                                                                        fetchData(); setEditingCompletionId(null)
-                                                                                                                    }}><Save className="h-3.5 w-3.5" /></Button>
-                                                                                                                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingCompletionId(null)}><X className="h-3.5 w-3.5" /></Button>
-                                                                                                                </div>
-                                                                                                            ) : (
-                                                                                                                c.status === 'pending' && (
-                                                                                                                    <div className="flex items-center justify-end gap-1">
-                                                                                                                        <Button
-                                                                                                                            size="icon" variant="ghost" className="h-7 w-7 text-gray-400 hover:text-calm-teal"
-                                                                                                                            onClick={() => {
-                                                                                                                                setEditingCompletionId(c.id)
-                                                                                                                                if (c.scheduledAt) {
-                                                                                                                                    const d = getSafeDate(c.scheduledAt)
-                                                                                                                                    const year = d.getFullYear()
-                                                                                                                                    const month = String(d.getMonth() + 1).padStart(2, '0')
-                                                                                                                                    const day = String(d.getDate()).padStart(2, '0')
-                                                                                                                                    const hours = String(d.getHours()).padStart(2, '0')
-                                                                                                                                    const minutes = String(d.getMinutes()).padStart(2, '0')
-                                                                                                                                    setEditDate(`${year}-${month}-${day}`)
-                                                                                                                                    setEditTime(`${hours}:${minutes}`)
-                                                                                                                                }
-                                                                                                                            }}
-                                                                                                                        >
-                                                                                                                            <Edit className="h-3 w-3" />
-                                                                                                                        </Button>
-                                                                                                                        <Button
-                                                                                                                            size="icon" variant="ghost" className="h-7 w-7 text-gray-400 hover:text-red-500 hover:bg-red-50"
-                                                                                                                            onClick={async () => {
-                                                                                                                                if (confirm(t("confirmDeleteQuestionnaire"))) {
-                                                                                                                                    await api.deleteQuestionnaireCompletion(c.id)
-                                                                                                                                    fetchData()
-                                                                                                                                }
-                                                                                                                            }}
-                                                                                                                        >
-                                                                                                                            <Trash2 className="h-3 w-3" />
-                                                                                                                        </Button>
-                                                                                                                    </div>
-                                                                                                                )
+                                                                                    {a.status !== 'completed' && isAssignmentRecurrent && (
+                                                                                        <>
+                                                                                            <DropdownMenuItem onClick={() => handleToggleStatus(a.id)} className="cursor-pointer">
+                                                                                                {a.status === 'active' ? (
+                                                                                                    <>
+                                                                                                        <Pause className="mr-2 h-4 w-4 text-gray-500" />
+                                                                                                        <span>{t("pause")}</span>
+                                                                                                    </>
+                                                                                                ) : (
+                                                                                                    <>
+                                                                                                        <Play className="mr-2 h-4 w-4 text-gray-500" />
+                                                                                                        <span>{t("resume")}</span>
+                                                                                                    </>
+                                                                                                )}
+                                                                                            </DropdownMenuItem>
+                                                                                            <DropdownMenuItem onClick={async () => {
+                                                                                                if (confirm(t("confirmComplete"))) {
+                                                                                                    await api.updateAssignmentStatus(a.id, "completed")
+                                                                                                    fetchData()
+                                                                                                }
+                                                                                            }} className="cursor-pointer">
+                                                                                                <CheckCircle2 className="mr-2 h-4 w-4 text-gray-500" />
+                                                                                                <span>{t("completed")}</span>
+                                                                                            </DropdownMenuItem>
+                                                                                            <DropdownMenuSeparator />
+                                                                                        </>
+                                                                                    )}
 
-                                                                                                            )}
-                                                                                                        </td>
-                                                                                                    </tr>
-                                                                                                ))}
-                                                                                            </React.Fragment>
-                                                                                        )
-                                                                                    })}
-                                                                                </tbody>
-                                                                            </table>
+                                                                                    <DropdownMenuItem onClick={() => handleDeleteAssignment(a.id)} className="text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer">
+                                                                                        <Trash2 className="mr-2 h-4 w-4" />
+                                                                                        <span>{t("delete")}</span>
+                                                                                    </DropdownMenuItem>
+                                                                                </DropdownMenuContent>
+                                                                            </DropdownMenu>
                                                                         </div>
                                                                     </td>
                                                                 </tr>
-                                                            )
-                                                        })()}
-                                                    </React.Fragment>
-                                                )
-                                            })
+                                                                {isExpanded && (() => {
+
+                                                                    // Helper function to get week number and year
+                                                                    const getWeekInfo = (date: Date) => {
+                                                                        const firstDayOfYear = new Date(date.getFullYear(), 0, 1)
+                                                                        const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000
+                                                                        const weekNumber = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7)
+                                                                        return { week: weekNumber, year: date.getFullYear() }
+                                                                    }
+
+                                                                    // Group completions by week
+                                                                    const sortedCompletions = assignmentCompletions.sort((x, y) => {
+                                                                        const tA = x.scheduledAt ? getSafeDate(x.scheduledAt).getTime() : 0
+                                                                        const tB = y.scheduledAt ? getSafeDate(y.scheduledAt).getTime() : 0
+                                                                        return tA - tB
+                                                                    })
+
+                                                                    const completionsByWeek: { [key: string]: typeof assignmentCompletions } = {}
+                                                                    sortedCompletions.forEach((c) => {
+                                                                        if (c.scheduledAt) {
+                                                                            const date = getSafeDate(c.scheduledAt)
+                                                                            const { week, year } = getWeekInfo(date)
+                                                                            const key = `${year}-W${week}`
+                                                                            if (!completionsByWeek[key]) {
+                                                                                completionsByWeek[key] = []
+                                                                            }
+                                                                            completionsByWeek[key].push(c)
+                                                                        }
+                                                                    })
+
+                                                                    return (
+                                                                        <tr className="bg-gray-50/30 animate-in fade-in zoom-in-95 duration-200">
+                                                                            <td colSpan={6} className="px-6 py-4 border-t border-gray-100 border-b border-gray-200 shadow-inner">
+                                                                                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm w-full">
+                                                                                    <table className="w-full text-sm">
+                                                                                        <thead className="bg-gray-50 border-b border-gray-200">
+                                                                                            <tr>
+                                                                                                <th className="px-4 py-3 font-semibold text-gray-500 text-left">Fecha Programada</th>
+                                                                                                <th className="px-4 py-3 font-semibold text-gray-500 text-left">{t('status')}</th>
+                                                                                                <th className="px-4 py-3 font-semibold text-gray-500 text-left">Tiempo Restante</th>
+                                                                                                <th className="px-4 py-3 font-semibold text-gray-500 text-right">Acciones</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody>
+                                                                                            {Object.keys(completionsByWeek).map((weekKey) => {
+                                                                                                const [yearStr, weekStr] = weekKey.split('-W')
+                                                                                                const weekCompletions = completionsByWeek[weekKey]
+                                                                                                const firstDate = weekCompletions[0].scheduledAt ? new Date(weekCompletions[0].scheduledAt) : new Date()
+
+                                                                                                // Calculate week start and end dates
+                                                                                                const startOfWeek = new Date(firstDate)
+                                                                                                startOfWeek.setDate(firstDate.getDate() - firstDate.getDay() + 1) // Monday
+                                                                                                const endOfWeek = new Date(startOfWeek)
+                                                                                                endOfWeek.setDate(startOfWeek.getDate() + 6) // Sunday
+
+                                                                                                return (
+                                                                                                    <React.Fragment key={weekKey}>
+                                                                                                        {/* Week Header */}
+                                                                                                        <tr className="bg-calm-teal/5 border-t-2 border-calm-teal/20">
+                                                                                                            <td colSpan={4} className="px-4 py-2">
+                                                                                                                <div className="flex items-center gap-2">
+                                                                                                                    <Calendar className="h-4 w-4 text-calm-teal" />
+                                                                                                                    <span className="font-bold text-sm text-calm-teal">
+                                                                                                                        Semana {weekStr} - {yearStr}
+                                                                                                                    </span>
+                                                                                                                    <span className="text-xs text-gray-500">
+                                                                                                                        ({startOfWeek.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} - {endOfWeek.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })})
+                                                                                                                    </span>
+                                                                                                                </div>
+                                                                                                            </td>
+                                                                                                        </tr>
+                                                                                                        {/* Completions for this week */}
+                                                                                                        {weekCompletions.map((c) => (
+                                                                                                            <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                                                                                                                <td className="px-4 py-3 text-neutral-charcoal">
+                                                                                                                    {c.scheduledAt ? (
+                                                                                                                        <div className="flex flex-col gap-1">
+                                                                                                                            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-700">
+                                                                                                                                <Calendar className="h-3.5 w-3.5 text-calm-teal" />
+                                                                                                                                <span>{getSafeDate(c.scheduledAt).toLocaleDateString()}</span>
+                                                                                                                            </div>
+                                                                                                                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                                                                                                <Clock className="h-3.5 w-3.5 text-gray-400" />
+                                                                                                                                <span>{getSafeDate(c.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                                                                                            </div>
+                                                                                                                        </div>
+                                                                                                                    ) : "—"}
+                                                                                                                </td>
+                                                                                                                <td className="px-4 py-3">
+                                                                                                                    <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${c.status === 'completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                                                                                                                        c.status === 'missed' ? 'bg-red-50 text-red-700 border-red-200' :
+                                                                                                                            c.status === 'sent' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                                                                                                                'bg-gray-100 text-gray-600 border-gray-200'
+                                                                                                                        }`}>
+                                                                                                                        {t(c.status) || c.status}
+                                                                                                                    </span>
+                                                                                                                    {c.isDelayed && (
+                                                                                                                        <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                                                                                            Fuera de plazo
+                                                                                                                        </span>
+                                                                                                                    )}
+                                                                                                                </td>
+                                                                                                                <td className="px-4 py-3">
+                                                                                                                    {c.status === 'pending' && c.scheduledAt && (() => {
+                                                                                                                        const now = new Date()
+                                                                                                                        const scheduled = getSafeDate(c.scheduledAt)
+                                                                                                                        const diffMs = scheduled.getTime() - now.getTime()
+
+                                                                                                                        if (diffMs < 0) {
+                                                                                                                            return (
+                                                                                                                                <div className="flex items-center gap-1.5">
+                                                                                                                                    <span className="text-xs text-red-600 font-medium">⏰ Vencido</span>
+                                                                                                                                </div>
+                                                                                                                            )
+                                                                                                                        }
+
+                                                                                                                        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+                                                                                                                        const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+                                                                                                                        const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+
+                                                                                                                        let timeRemaining = ""
+                                                                                                                        if (days > 0) {
+                                                                                                                            timeRemaining = `${days}d ${hours}h`
+                                                                                                                        } else if (hours > 0) {
+                                                                                                                            timeRemaining = `${hours}h ${minutes}m`
+                                                                                                                        } else {
+                                                                                                                            timeRemaining = `${minutes}m`
+                                                                                                                        }
+
+                                                                                                                        return (
+                                                                                                                            <div className="flex items-center gap-1.5">
+                                                                                                                                <Clock className="h-4 w-4 text-calm-teal" />
+                                                                                                                                <span className="text-xs text-calm-teal font-medium">{timeRemaining}</span>
+                                                                                                                            </div>
+                                                                                                                        )
+                                                                                                                    })()}
+                                                                                                                </td>
+                                                                                                                <td className="px-4 py-3 text-right">
+                                                                                                                    {editingCompletionId === c.id ? (
+                                                                                                                        <div className="flex items-center justify-end gap-2">
+                                                                                                                            <Input
+                                                                                                                                type="datetime-local" className="h-8 w-[180px] text-xs"
+                                                                                                                                value={`${editDate}T${editTime}`}
+                                                                                                                                onChange={(e) => { const val = e.target.value; if (val) { const [d, t] = val.split("T"); setEditDate(d); setEditTime(t); } }}
+                                                                                                                            />
+                                                                                                                            <Button size="icon" className="h-7 w-7 bg-calm-teal text-white" onClick={async () => {
+                                                                                                                                if (!c.id || !editDate || !editTime) return
+                                                                                                                                const localDate = new Date(`${editDate}T${editTime}`)
+                                                                                                                                await api.updateQuestionnaireCompletion(c.id, { scheduledAt: localDate.toISOString() })
+                                                                                                                                fetchData(); setEditingCompletionId(null)
+                                                                                                                            }}><Save className="h-3.5 w-3.5" /></Button>
+                                                                                                                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingCompletionId(null)}><X className="h-3.5 w-3.5" /></Button>
+                                                                                                                        </div>
+                                                                                                                    ) : (
+                                                                                                                        c.status === 'pending' && (
+                                                                                                                            <div className="flex items-center justify-end gap-1">
+                                                                                                                                <Button
+                                                                                                                                    size="icon" variant="ghost" className="h-7 w-7 text-gray-400 hover:text-calm-teal"
+                                                                                                                                    onClick={() => {
+                                                                                                                                        setEditingCompletionId(c.id)
+                                                                                                                                        if (c.scheduledAt) {
+                                                                                                                                            const d = getSafeDate(c.scheduledAt)
+                                                                                                                                            const year = d.getFullYear()
+                                                                                                                                            const month = String(d.getMonth() + 1).padStart(2, '0')
+                                                                                                                                            const day = String(d.getDate()).padStart(2, '0')
+                                                                                                                                            const hours = String(d.getHours()).padStart(2, '0')
+                                                                                                                                            const minutes = String(d.getMinutes()).padStart(2, '0')
+                                                                                                                                            setEditDate(`${year}-${month}-${day}`)
+                                                                                                                                            setEditTime(`${hours}:${minutes}`)
+                                                                                                                                        }
+                                                                                                                                    }}
+                                                                                                                                >
+                                                                                                                                    <Edit className="h-3 w-3" />
+                                                                                                                                </Button>
+                                                                                                                                <Button
+                                                                                                                                    size="icon" variant="ghost" className="h-7 w-7 text-gray-400 hover:text-red-500 hover:bg-red-50"
+                                                                                                                                    onClick={async () => {
+                                                                                                                                        if (confirm(t("confirmDeleteQuestionnaire"))) {
+                                                                                                                                            await api.deleteQuestionnaireCompletion(c.id)
+                                                                                                                                            fetchData()
+                                                                                                                                        }
+                                                                                                                                    }}
+                                                                                                                                >
+                                                                                                                                    <Trash2 className="h-3 w-3" />
+                                                                                                                                </Button>
+                                                                                                                            </div>
+                                                                                                                        )
+
+                                                                                                                    )}
+                                                                                                                </td>
+                                                                                                            </tr>
+                                                                                                        ))}
+                                                                                                    </React.Fragment>
+                                                                                                )
+                                                                                            })}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    )
+                                                                })()}
+                                                            </React.Fragment>
+                                                        )
+                                                    })}
+                                                </React.Fragment>
+                                            ))
                                         )}
                                     </tbody>
                                 </table>
@@ -1412,17 +1466,22 @@ export default function QuestionnairePage() {
                                 <CardContent className="space-y-4 pt-6">
                                     <div className="space-y-2">
                                         <Label>{t("selectPatient")}</Label>
-                                        <select value={selectedPatient} onChange={(e) => setSelectedPatient(e.target.value)} className="w-full h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm focus:outline-none focus:ring-2 focus:ring-calm-teal/20">
-                                            <option value="">-- {t("selectPatient")} --</option>
-                                            {patients.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                        </select>
+                                        <SearchablePatientSelect
+                                            patients={patients}
+                                            patientsByPsychologist={patientsByPsychologist}
+                                            selectedValue={selectedPatient}
+                                            onChange={setSelectedPatient}
+                                            placeholder={`-- ${t("selectPatient")} --`}
+                                        />
                                     </div>
                                     <div className="space-y-2">
                                         <Label>{t("questionnaireTitle")}</Label>
-                                        <select value={selectedQuestionnaire} onChange={(e) => setSelectedQuestionnaire(e.target.value)} className="w-full h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm focus:outline-none focus:ring-2 focus:ring-calm-teal/20">
-                                            <option value="">-- {t("selectQuestionnaire")} --</option>
-                                            {questionnaires.map(q => <option key={q.id} value={q.id}>{q.title}</option>)}
-                                        </select>
+                                        <CustomSelect
+                                            options={questionnaires.map(q => ({ value: q.id, label: q.title }))}
+                                            selectedValue={selectedQuestionnaire}
+                                            onChange={setSelectedQuestionnaire}
+                                            placeholder={`-- ${t("selectQuestionnaire")} --`}
+                                        />
                                     </div>
                                     <div className="flex items-center space-x-2 pb-2">
                                         <Switch
@@ -1478,10 +1537,16 @@ export default function QuestionnairePage() {
                                                 <Label>{t("frequency")}</Label>
                                                 <div className="flex gap-2">
                                                     <Input type="number" min="1" value={frequencyCount} onChange={(e) => setFrequencyCount(parseInt(e.target.value))} className="w-20 rounded-xl" />
-                                                    <select value={frequencyType} onChange={(e) => setFrequencyType(e.target.value as "weekly" | "daily")} className="flex-1 h-10 px-3 rounded-xl bg-white border border-soft-gray text-sm focus:outline-none focus:ring-2 focus:ring-calm-teal/20">
-                                                        <option value="weekly">{t("timesPerWeek")}</option>
-                                                        <option value="daily">{t("timesPerDay")}</option>
-                                                    </select>
+                                                    <CustomSelect
+                                                        options={[
+                                                            { value: "weekly", label: t("timesPerWeek") },
+                                                            { value: "daily", label: t("timesPerDay") }
+                                                        ]}
+                                                        selectedValue={frequencyType}
+                                                        onChange={(val) => setFrequencyType(val as "weekly" | "daily")}
+                                                        placeholder=""
+                                                        className="flex-1"
+                                                    />
                                                 </div>
                                             </div>
 
