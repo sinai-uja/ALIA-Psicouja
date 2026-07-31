@@ -41,25 +41,77 @@ Psicouja bridges clinical psychology and modern digital tooling. The platform is
 ```bash
 backend/
 ├── main.py                 # Application entrypoint & FastAPI Lifespan (DB init)
-├── database.py             # Database engines, SQLAlchemy sessions & connection logic
+├── database.py             # Database engines, SQLModel sessions & connection logic
 ├── models.py               # SQLModel schemas for DB tables & Pydantic validation
 ├── auth.py                 # JWT token generation, password verification, & RBAC dependencies
 ├── llm_service.py          # Asynchronous LLM client handlers & Prompt templates
-├── logging_utils.py        # central auditing helper functions
-├── routers/                # Endpoint controllers organized by logical domains
-│   ├── auth_router.py
-│   ├── patients_router.py
-│   ├── chat_router.py
-│   ├── sessions_router.py
-│   ├── superadmin_router.py
-│   └── ...
+├── logging_utils.py        # Central auditing helper functions
+├── prompts/                # Modular LLM prompt templates (Markdown format)
+│   ├── patient_system.md   # Patient simulation system instructions
+│   ├── patient_default_personality.md # Persona baseline defaults
+│   ├── therapist_system.md # AI therapist supervision prompt
+│   ├── strategies_system.md# Clinical intervention tactics selector
+│   ├── bitacora_system.md  # Session bitácora summary generator
+│   └── generate_questionnaire.md # EMA questionnaire auto-generation
+├── routers/                # 14 domain-specific API endpoint controllers
+│   ├── auth_router.py      # Authentication & token endpoints
+│   ├── superadmin_router.py# Platform analytics & user management
+│   ├── patients_router.py  # Clinical patient management & risk tracking
+│   ├── chat_router.py      # AI Client simulator & supervisor API
+│   ├── assignments_router.py # EMA questionnaire assignment lifecycle
+│   ├── sessions_router.py  # Therapy session records & bitácoras
+│   ├── audit_logs_router.py# High-risk audit trail logging
+│   └── ...                 # Notes, messages, notifications, stats, etc.
+├── scripts/                # Utility & Database management scripts
+│   ├── export_to_jsonl.py  # Dataset exporter for LLM fine-tuning & research
+│   ├── migrate_to_postgres.py # SQLite to PostgreSQL data migration script
+│   ├── backup_db.ps1 / .sh # Database backup scripts (PowerShell / Bash)
+│   └── restore_db.ps1      # Database restoration script (PowerShell)
 ├── services/               # Internal business logic and background runners
-│   ├── firebase_service.py # Firebase Cloud Messaging push notification helpers
+│   ├── firebase_service.py # Firebase Cloud Messaging push notification service
 │   └── scheduler.py        # Background APScheduler for EMA assignment timelines
-└── utils/                  # Miscellaneous scripts
-    ├── sender.py           # Configurable SMTP email templates and SSL mail sender
-    └── logger.py           # Central logging configuration
+└── utils/                  # Utility modules
+    ├── assignment_utils.py # EMA assignment scheduling logic
+    ├── sender.py           # Configurable SMTP email templates & SSL sender
+    └── logger.py           # Loguru-based central logging configuration
 ```
+
+---
+
+## 🛠️ Utility & Database Management Scripts
+
+The `/scripts` folder contains administrative utilities for data processing and database administration:
+
+* **`export_to_jsonl.py`**: Exports all AI-assisted therapy interactions, supervisor suggestions, human edits, and patient inputs to JSON Lines (`.jsonl`) format. Crucial for academic research, evaluation, and LLM fine-tuning datasets.
+  ```bash
+  python scripts/export_to_jsonl.py
+  ```
+* **`migrate_to_postgres.py`**: Migrates all data from local `psychology.db` (SQLite) into a PostgreSQL instance while preserving primary key auto-increments and foreign key relationships.
+  ```bash
+  python scripts/migrate_to_postgres.py
+  ```
+* **`backup_db.ps1` / `backup_db.sh`**: Creates timestamped backups of SQLite (`psychology.db`) or PostgreSQL databases into `/backups`.
+* **`restore_db.ps1`**: Restores the database from a selected backup file in `/backups`.
+
+---
+
+## 🔑 Default Initial Accounts
+
+On server lifespan startup (`main.py`), the backend automatically checks and seeds the following default accounts if they do not exist:
+
+| Role | Default Email | Default Password | Environment Variable Overrides |
+| :--- | :--- | :--- | :--- |
+| **Superadmin** | `superadmin@example.com` | `change-me-superadmin` | `DEFAULT_SUPERADMIN_EMAIL` / `DEFAULT_SUPERADMIN_PASSWORD` |
+| **Admin** | `admin@example.com` | `change-me-admin` | `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD` |
+
+---
+
+## 🤖 Modular LLM Prompt System (`prompts/`)
+
+The backend utilizes modular Markdown prompt templates located in `backend/prompts/` to drive local and remote LLMs:
+* **Patient Simulator**: `patient_system.md` & `patient_default_personality.md` define persona parameters, therapeutic frameworks (CBT/ACT), and emotional states.
+* **AI Supervisor**: `therapist_system.md`, `strategies_system.md`, `strategies_instructions.md` generate real-time therapeutic tactic suggestions (Validation, Socratic questioning, Action commitment, etc.).
+* **Session & Questionnaire Summaries**: `bitacora_system.md` and `session_summary_system.md` construct clinical bitácoras from therapy session transcripts.
 
 ---
 

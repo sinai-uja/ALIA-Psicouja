@@ -9,12 +9,43 @@ Built with **Next.js 16** (App Router), this dashboard is fully responsive, opti
 ## ✨ Key Features
 
 - **📊 Patient Monitoring Dashboard**: Visual representations of EMA (Ecological Momentary Assessment) data to observe patient mood, anxiety, and behavior patterns.
-- **💬 AI Simulator & Assistants**: Practice tools for therapists using customized virtual client simulators to refine intervention strategies.
-- **📅 Session Management**: Intuitive tools to schedule, log, and keep track of active patient therapy sessions.
-- **📝 Secure Clinical Notes & Bitácoras**: Secure storage and logging of therapist clinical progress notes and summaries.
-- **📈 Advanced Analytics**: Interactive charts, metrics, and progress lines representing clinical indicators over time using **Recharts**.
-- **🔔 Real-time Notifications**: Real-time alerts regarding patient check-ins, messages, or anomalies.
+- **🤖 AI Simulator Sandbox**: Practice sandbox for therapists to train with custom AI-simulated patient personas under different clinical models (CBT, ACT).
+- **💡 Real-Time AI Supervision**: Direct live chat interface with side-by-side AI supervisor recommendations (Validation, Socratic questioning, Action commitment, etc.).
+- **👑 Superadmin Panel (`/superadmin`)**: Administrative console for managing psychologist accounts, tracking global message counts, viewing human-AI edit ratios, and inspecting security audit logs.
+- **📅 Session Management & Bitácoras**: Tools to schedule, log, and keep track of therapy sessions with automatic AI bitácora summaries.
+- **📈 Advanced Analytics**: Interactive charts and telemetry graphs representing patient progress indicators over time using **Recharts**.
 - **🌐 Bilingual Support**: Full multi-language support (English and Spanish) built-in dynamically.
+
+---
+
+## 📁 Project Structure
+
+```bash
+frontend/
+├── app/                        # Next.js 16 App Router
+│   ├── layout.tsx              # Root layout & context providers
+│   ├── page.tsx                # Main Psychologist Dashboard
+│   ├── login/                  # Authentication page
+│   ├── pacientes/              # Patient list, profile telemetry & EMA charts
+│   ├── simulador/              # AI Patient Simulator sandbox
+│   ├── chat/                   # Secure patient messaging & AI Supervision panel
+│   ├── sesiones/               # Session scheduling & clinical bitácoras
+│   ├── superadmin/             # Superadmin platform governance panel
+│   └── audit-logs/             # Security audit log inspection
+├── components/                 # UI Components
+│   ├── ui/                     # Accessible UI components (Radix UI, Tailwind 4)
+│   ├── PatientCard.tsx         # Patient summary tile & status indicator
+│   ├── EmaChart.tsx            # Interactive Recharts EMA trends graph
+│   ├── AiSupervisorPanel.tsx   # Live strategy recommendation pill bar
+│   └── SimulatorChat.tsx       # AI patient interactive practice interface
+├── contexts/                   # Global React contexts
+│   ├── AuthContext.tsx         # User session & JWT state provider
+│   └── LanguageContext.tsx     # Internationalization state (ES / EN)
+├── hooks/                      # Custom React hooks (useAuth, usePatients, useSocket)
+├── lib/                        # Axios HTTP client, API route constants, date helpers
+├── proxy.ts                    # Next.js 16 Proxy Convention for route & access logging
+└── styles/                     # Tailwind CSS 4 global stylesheets
+```
 
 ---
 

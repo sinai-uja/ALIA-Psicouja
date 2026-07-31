@@ -68,17 +68,19 @@ The repository is organized into three distinct sub-projects, each serving a cor
 
 ```bash
 Psicouja/
-├── backend/            # Python FastAPI backend & database layer
-│   ├── main.py         # Application entry point & FastAPI Lifespan (DB init)
+├── backend/            # Python FastAPI backend, database & AI layer
+│   ├── main.py         # Application entry point & FastAPI Lifespan (DB & initial user init)
 │   ├── database.py     # Session pool configuration & connection drivers
 │   ├── models.py       # SQLModel declarations & Pydantic validation schemas
 │   ├── auth.py         # Cryptographic JWT helpers & Role-Based Access Control (RBAC)
 │   ├── llm_service.py  # Asynchronous LLM client & Clinical therapy prompts
-│   ├── routers/        # Endpoint controllers (auth, patients, chat, sessions, etc.)
+│   ├── prompts/        # 12 Modular LLM prompt templates (patient, supervisor, bitácoras)
+│   ├── routers/        # 14 Domain-specific API endpoint controllers
+│   ├── scripts/        # Data export (JSONL), DB migration (SQLite->Postgres), & Backup scripts
 │   └── services/       # Async background runners (Firebase SDK, APScheduler)
 │
 ├── frontend/           # Next.js 16 Psychologist & Admin dashboard
-│   ├── app/            # Next.js App Router (Pages, Patients, Simulator, Analytics)
+│   ├── app/            # Next.js App Router (Pages, Patients, Simulator, Superadmin)
 │   ├── components/     # High-fidelity dashboard widgets & forms
 │   ├── contexts/       # Bilingual localization and Authentication states
 │   ├── proxy.ts        # Next.js 16 Proxy Convention for route & access logging
@@ -86,8 +88,8 @@ Psicouja/
 │
 └── user-app/           # Mobile-responsive Patient application
     ├── app/            # Next.js App Router (Assessments, Secure Chat, Progress)
-    ├── lib/            # Firebase SDK setup and state handlers
-    ├── components/     # Accessible mobile UI components
+    ├── lib/            # Firebase Web SDK setup and state handlers
+    ├── components/     # Accessible mobile UI components & FCM push manager
     └── styles/         # Responsive Tailwind styling configurations
 ```
 
@@ -105,7 +107,9 @@ For detailed technical specifications, internal structures, environment configur
 * **📋 Ecological Momentary Assessments (EMA)**: Automated daily scheduling of clinical tracking forms for patients, with real-time progress charts for therapists.
 * **🤖 AI-Simulated Practice Client**: Practice sandbox for therapists to train in clinical frameworks (CBT/ACT) using AI-simulated patient profiles powered by local LLMs.
 * **💬 Secure Chat & AI Supervision**: Real-time messaging between patients and therapists with dynamic strategy recommendations (validation, Socratic questioning, etc.) from an AI supervisor.
-* **🛡️ RBAC & Audit Logging**: Cryptographically secure JWT tokens with specific roles (Patient, Psychologist, Superadmin) and automated logs for security-critical actions.
+* **👑 Superadmin Governance**: Central platform administration panel for managing therapists, monitoring global messaging volume, viewing human AI-edit ratios, and auditing system events.
+* **📊 LLM Interaction Dataset Exporter (`JSONL`)**: Dedicated script (`scripts/export_to_jsonl.py`) to export therapy sessions, AI suggestions, and therapist edits for academic research and fine-tuning.
+* **🛡️ RBAC & Audit Logging**: Cryptographically secure JWT tokens with specific roles (Patient, Psychologist, Admin, Superadmin) and automated logs for security-critical actions.
 
 ---
 

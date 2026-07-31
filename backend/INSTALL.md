@@ -48,7 +48,7 @@ Key configuration parameters include:
   - `PORT`: Port to run the FastAPI server (default: `8001`).
   - `CORS_ALLOWED_ORIGINS`: Comma-separated list of allowed CORS origins (default: `*`).
   - `SECRET_KEY`: Security secret key to sign JWT tokens.
-  - `ACCESS_TOKEN_EXPIRE_MINUTES`: JWT token expiration time in minutes (default: 30 days).
+  - `ACCESS_TOKEN_EXPIRE_MINUTES`: JWT token expiration time in minutes (default: 43200 / 30 days).
 - **Frontend URL & Communications**:
   - `FRONTEND_URL`: URL of the frontend application (used in emails and push notification redirection links).
 - **Default Accounts**:
@@ -56,9 +56,17 @@ Key configuration parameters include:
   - `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD`: Default credentials generated on database startup for the regular Administrator.
 - **Database selection (`DB_TYPE`)**:
   - `"sqlite"`: Uses local zero-config `psychology.db`.
-  - `"postgresql"`: Uses PostgreSQL with connection parameters specified in `.env`.
+  - `"postgresql"`: Uses PostgreSQL with connection parameters specified in `.env` (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`).
+- **LLM / AI Model Integration**:
+  - `OPENAI_API_KEY_PSICOUJA`: API key for OpenAI-compatible endpoint.
+  - `BASE_URL_MODELS_PSICOUJA`: Base endpoint URL for local/remote LLM service.
+  - `MODEL_PSICOUJA` / `MODEL_QWEN` / `MODEL_GEMMA`: Configured model names for clinical client simulation and supervisor suggestions.
+- **Firebase & SMTP Email**:
+  - `FIREBASE_CREDENTIALS_PATH`: Path to Firebase service account JSON key file (`firebase-adminsdk.json`).
+  - `FIREBASE_WEBPUSH_LINK`: Web push redirection target URL.
+  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SENDER`, `PASSWORD`: SMTP server credentials for password resets and automated email alerts.
 
-### 4. Database Setup & Initialization
+### 4. Database Setup & Administrative Utilities
 
 The application uses **SQLModel** and automatically initializes tables and default superadmin accounts on backend startup via `main.py`.
 
@@ -80,6 +88,25 @@ Set `DB_TYPE=sqlite` in `.env`. No Docker or external database service is requir
    ```bash
    docker compose up -d
    ```
+
+#### 🛠️ Data Migration & Backups
+
+* **Migrate from SQLite to PostgreSQL**:
+  ```bash
+  python scripts/migrate_to_postgres.py
+  ```
+* **Export AI Session Logs to JSONL**:
+  ```bash
+  python scripts/export_to_jsonl.py
+  ```
+* **Manual Database Backups & Restores**:
+  ```powershell
+  # Backup (Windows PowerShell)
+  .\scripts\backup_db.ps1
+
+  # Restore (Windows PowerShell)
+  .\scripts\restore_db.ps1
+  ```
 
 ### 5. Running the Application
 
