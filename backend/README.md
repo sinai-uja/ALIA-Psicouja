@@ -3,7 +3,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![SQLModel](https://img.shields.io/badge/SQLModel-e91e63?style=for-the-badge)](https://sqlmodel.tiangolo.com/)
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](#)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge)](../LICENSE)
 
 Welcome to the backend service for **Psicouja**, an advanced management and simulation platform for clinical psychology. Built using **FastAPI** and **SQLModel**, this API drives secure communications, Ecological Momentary Assessments (EMA), multi-agent LLM evaluations, and interactive therapist-patient training modules.
 
