@@ -55,19 +55,31 @@ Key configuration parameters include:
   - `DEFAULT_SUPERADMIN_EMAIL` / `DEFAULT_SUPERADMIN_PASSWORD`: Default credentials generated on database startup for the Super Administrator.
   - `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD`: Default credentials generated on database startup for the regular Administrator.
 - **Database selection (`DB_TYPE`)**:
-  - `"sqlite"`: Uses local `psychology.db`.
-  - `"postgresql"`: Uses PostgreSQL with connection parameters specified in the `.env` file.
-- **AI/LLM models**:
-  - `OPENAI_API_KEY_PSICOUJA`: OpenAI API credential key.
-  - `BASE_URL_MODELS_PSICOUJA`: Custom API endpoint for local university models.
-- **Email (SMTP)**:
-  - `SMTP_HOST` / `SMTP_PORT` / `SMTP_SENDER` / `PASSWORD`: Parameterized email server config to automatically send access credentials and reset emails to therapists/patients.
-- **Firebase integration**:
-  - `FIREBASE_CREDENTIALS_PATH`: Optional path to service account Firebase credentials JSON. Defaults to the local `psicouja-...json` certificate file.
-  - `FIREBASE_WEBPUSH_LINK`: Destination link for FCM push notifications (falls back to `FRONTEND_URL`).
+  - `"sqlite"`: Uses local zero-config `psychology.db`.
+  - `"postgresql"`: Uses PostgreSQL with connection parameters specified in `.env`.
 
-### 4. Database Initialization
-The application uses **SQLModel** and automatically initializes the database schema (and default superadmin users) on startup via the `lifespan` event in `main.py`.
+### 4. Database Setup & Initialization
+
+The application uses **SQLModel** and automatically initializes tables and default superadmin accounts on backend startup via `main.py`.
+
+#### Option A: Local SQLite (Default / Zero-Config)
+Set `DB_TYPE=sqlite` in `.env`. No Docker or external database service is required.
+
+#### Option B: PostgreSQL with Docker Compose
+1. Ensure Docker Desktop / Docker daemon is running.
+2. In `.env`, set:
+   ```env
+   DB_TYPE=postgresql
+   POSTGRES_USER=psicouja
+   POSTGRES_PASSWORD=psicouja_secret
+   POSTGRES_DB=psicouja
+   POSTGRES_HOST=localhost
+   POSTGRES_PORT=5432
+   ```
+3. Start the PostgreSQL service and automatic daily backup runner:
+   ```bash
+   docker compose up -d
+   ```
 
 ### 5. Running the Application
 

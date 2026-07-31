@@ -157,7 +157,7 @@ Ensure you have the following installed:
 * **Node.js** (v18.x or higher)
 * **Python** (v3.9 or higher)
 * **npm** or **pnpm** package manager
-* (Optional) **PostgreSQL** database (default fallback is local SQLite)
+* (Optional) **Docker & Docker Compose** (if running PostgreSQL; fallback is zero-config local SQLite)
 
 ---
 
@@ -190,7 +190,16 @@ Ensure you have the following installed:
    cp .env.example .env
    ```
 
-5. Launch the FastAPI server:
+5. **Choose your Database Mode**:
+   * **Option A: SQLite (Default / Development)**:
+     Leave `DB_TYPE=sqlite` in `.env`. No external database or Docker setup is needed. It automatically manages `psychology.db`.
+   * **Option B: PostgreSQL via Docker Compose**:
+     Set `DB_TYPE=postgresql` in `.env` and start PostgreSQL with automated daily backups:
+     ```bash
+     docker compose up -d
+     ```
+
+6. Launch the FastAPI server:
    ```bash
    python main.py
    ```

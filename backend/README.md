@@ -94,7 +94,14 @@ For detailed environment configuration, dependency guides, and custom environmen
    cp .env.example .env
    ```
 
-5. **Run Development Server**:
+5. **Database Setup**:
+   * **SQLite (Default)**: Set `DB_TYPE=sqlite` in `.env`. No external installation required; database file is created automatically as `psychology.db`.
+   * **PostgreSQL via Docker Compose**: Set `DB_TYPE=postgresql` in `.env` and run Docker Compose to launch PostgreSQL 16 and automated daily backups:
+     ```bash
+     docker compose up -d
+     ```
+
+6. **Run Development Server**:
    ```bash
    python main.py
    ```
