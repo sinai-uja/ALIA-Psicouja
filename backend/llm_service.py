@@ -261,8 +261,7 @@ def _build_messages(chat_history, therapist_style=None, therapist_tone=None, the
     system_message = load_prompt("therapist_system.md")
     
     if therapist_style:
-        if therapist_style.lower() == "act":
-            system_message += f"\n\nTu estilo terapéutico es: {therapist_style}"
+        system_message += f"\n\nTu estilo terapéutico es: {therapist_style}"
     if therapist_tone:
         system_message += f"\nTu tono de comunicación debe ser: {therapist_tone}"
     if therapist_instructions:
